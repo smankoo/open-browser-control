@@ -25,10 +25,26 @@
 
 const { WebSocketServer, WebSocket } = require('ws');
 const readline = require('readline');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 const BRIDGE_PORT = parseInt(process.env.BRIDGE_PORT || '9334', 10);
 const SERVER_NAME = 'kiro-browser-use';
 const SERVER_VERSION = '0.1.0';
+
+// Screenshots are saved to a temp directory and paths are returned to the agent.
+// Kiro CLI (and many other agents) can't handle inline base64 images — they need file paths.
+const SCREENSHOT_DIR = path.join(os.tmpdir(), 'kiro-browser-use-screenshots');
+fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+let screenshotCounter = 0;
+
+function saveScreenshot(base64Data) {
+  const filename = `screenshot-${Date.now()}-${++screenshotCounter}.png`;
+  const filepath = path.join(SCREENSHOT_DIR, filename);
+  fs.writeFileSync(filepath, Buffer.from(base64Data, 'base64'));
+  return filepath;
+}
 
 // ─── Embedded Bridge Server ──────────────────────────────────────────────────
 // The MCP server runs its own WebSocket server. The Chrome extension connects
@@ -148,7 +164,7 @@ function sendAction(action, params = {}) {
 const MCP_TOOLS = [
   {
     name: 'browser_screenshot',
-    description: 'Take a screenshot of the current browser page. Returns base64-encoded PNG image.',
+    description: 'Take a screenshot of the current browser page. Returns the file path to a saved PNG image.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -398,11 +414,16 @@ async function handleRequest(request) {
         const content = [];
 
         if (result.success) {
-          if (result.data?.screenshot) {
-            content.push({ type: 'image', data: result.data.screenshot, mimeType: 'image/png' });
-          }
           const summary = { ...result.data };
-          delete summary.screenshot;
+
+          if (summary.screenshot) {
+            // Save to disk and return the file path
+            const filepath = saveScreenshot(summary.screenshot);
+            summary.screenshot_path = filepath;
+            delete summary.screenshot;
+            log(`Screenshot saved: ${filepath}`);
+          }
+
           if (result.pageState) summary.pageState = result.pageState;
           content.push({ type: 'text', text: JSON.stringify(summary, null, 2) });
           sendResult(id, { content });
