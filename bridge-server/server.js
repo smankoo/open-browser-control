@@ -27,6 +27,31 @@ function getArg(name, defaultValue) {
 
 const PORT = parseInt(getArg('port', '9334'), 10);
 
+// ─── Message Validation ─────────────────────────────────────────────────────
+
+const VALID_AGENT_ACTIONS = new Set([
+  'screenshot', 'click', 'type', 'keypress', 'scroll', 'navigate', 'wait',
+  'get_dom', 'get_page_info', 'execute_js', 'select_option', 'hover',
+  'request_user', 'new_tab', 'close_tab', 'switch_tab', 'list_tabs',
+]);
+
+const VALID_MESSAGE_TYPES = new Set([
+  'action', 'ping', 'pong', 'get_tool_schema', 'tool_schema',
+  'session_start', 'session_end', 'session_update',
+  'result', 'event',
+]);
+
+function isValidMessage(msg) {
+  if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') return false;
+  if (!VALID_MESSAGE_TYPES.has(msg.type)) return false;
+  if (msg.type === 'action') {
+    if (typeof msg.id !== 'string' || !msg.id) return false;
+    if (!VALID_AGENT_ACTIONS.has(msg.action)) return false;
+  }
+  if (msg.type === 'session_start' && typeof msg.name !== 'string') return false;
+  return true;
+}
+
 // ─── State ───────────────────────────────────────────────────────────────────
 
 let extensionSocket = null;
@@ -53,6 +78,11 @@ wss.on('connection', (ws) => {
     try {
       msg = JSON.parse(data.toString());
     } catch {
+      return;
+    }
+
+    if (!isValidMessage(msg)) {
+      log(`Rejected invalid message: type=${msg?.type}, action=${msg?.action}`);
       return;
     }
 
