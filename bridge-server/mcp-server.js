@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * MCP Server for Kiro Browser Use
+ * MCP Server for Open Browser Control
  *
  * Connects to the bridge server as an agent client with its own session.
  * If no bridge is running, starts one.
  *
  * MCP config:
- *   {"command": "npx", "args": ["-y", "github:smankoo/kiro-browser-use"]}
+ *   {"command": "npx", "args": ["-y", "github:smankoo/open-browser-control"]}
  */
 
 const { WebSocket } = require('ws');
@@ -20,13 +20,13 @@ const net = require('net');
 const crypto = require('crypto');
 
 const BRIDGE_PORT = parseInt(process.env.BRIDGE_PORT || '9334', 10);
-const SERVER_NAME = 'kiro-browser-use';
+const SERVER_NAME = 'open-browser-control';
 const SERVER_VERSION = '0.1.0';
 const SESSION_ID = crypto.randomUUID().slice(0, 8);
 let sessionName = `MCP-${SESSION_ID}`;
 
 // Screenshots saved to disk, paths returned to agent
-const SCREENSHOT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-browser-use-screenshots-'));
+const SCREENSHOT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'open-browser-control-screenshots-'));
 fs.chmodSync(SCREENSHOT_DIR, 0o700);
 let screenshotCounter = 0;
 
@@ -394,7 +394,7 @@ async function handleRequest(request) {
 
   switch (method) {
     case 'initialize': {
-      // Capture the MCP client's name (e.g. "kiro-cli", "claude-desktop", "cursor")
+      // Capture the MCP client's name (e.g. "claude-desktop", "cursor")
       const clientName = params?.clientInfo?.name;
       if (clientName) {
         sessionName = clientName;

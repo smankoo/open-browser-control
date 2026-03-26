@@ -1,34 +1,34 @@
 #!/usr/bin/env node
 
 /**
- * Kiro Browser Use — entry point.
+ * Open Browser Control — entry point.
  *
  * When used as an MCP server (the primary use case), this is the command
  * that runs. It:
- *   1. Ensures the Chrome extension is installed to ~/kiro-browser-use-extension/
+ *   1. Ensures the Chrome extension is installed to ~/open-browser-control-extension/
  *   2. Starts the MCP server (which embeds the WebSocket bridge)
  *
- * MCP config (Kiro CLI, Claude Desktop, etc.):
+ * MCP config (Claude Desktop, etc.):
  *   {
  *     "mcpServers": {
  *       "browser": {
  *         "command": "npx",
- *         "args": ["-y", "github:smankoo/kiro-browser-use"]
+ *         "args": ["-y", "github:smankoo/open-browser-control"]
  *       }
  *     }
  *   }
  *
  * Standalone:
- *   npx github:smankoo/kiro-browser-use              # MCP mode (default)
- *   npx github:smankoo/kiro-browser-use --bridge     # standalone WebSocket bridge (no MCP)
- *   npx github:smankoo/kiro-browser-use --extension  # print extension path and exit
+ *   npx github:smankoo/open-browser-control              # MCP mode (default)
+ *   npx github:smankoo/open-browser-control --bridge     # standalone WebSocket bridge (no MCP)
+ *   npx github:smankoo/open-browser-control --extension  # print extension path and exit
  */
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const EXTENSION_HOME = path.join(os.homedir(), 'kiro-browser-use-extension');
+const EXTENSION_HOME = path.join(os.homedir(), 'open-browser-control-extension');
 const args = process.argv.slice(2);
 
 // ─── Install Extension ──────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ function copyDir(src, dest) {
 }
 
 function log(msg) {
-  process.stderr.write(msg ? `[kiro-browser-use] ${msg}\n` : '\n');
+  process.stderr.write(msg ? `[open-browser-control] ${msg}\n` : '\n');
 }
 
 // ─── CLI Flags ───────────────────────────────────────────────────────────────
@@ -102,20 +102,20 @@ if (args.includes('--extension') || args.includes('--extension-path')) {
 
 if (args.includes('--help') || args.includes('-h')) {
   console.log(`
-kiro-browser-use — Give AI agents control of your Chrome browser.
+open-browser-control — Give AI agents control of your Chrome browser.
 
 Usage:
-  npx github:smankoo/kiro-browser-use                 Start MCP server (default)
-  npx github:smankoo/kiro-browser-use --bridge        Start standalone WebSocket bridge
-  npx github:smankoo/kiro-browser-use --extension     Print extension path and exit
-  npx github:smankoo/kiro-browser-use --port 9000     Use a custom port
+  npx github:smankoo/open-browser-control                 Start MCP server (default)
+  npx github:smankoo/open-browser-control --bridge        Start standalone WebSocket bridge
+  npx github:smankoo/open-browser-control --extension     Print extension path and exit
+  npx github:smankoo/open-browser-control --port 9000     Use a custom port
 
-MCP config (add to Kiro CLI or Claude Desktop):
+MCP config (add to your MCP client):
   {
     "mcpServers": {
       "browser": {
         "command": "npx",
-        "args": ["-y", "github:smankoo/kiro-browser-use"]
+        "args": ["-y", "github:smankoo/open-browser-control"]
       }
     }
   }

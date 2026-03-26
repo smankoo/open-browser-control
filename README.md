@@ -1,6 +1,6 @@
-# Kiro Browser Use
+# Open Browser Control
 
-Give AI agents control of your Chrome browser. Works with [Kiro CLI](https://kiro.dev), [Claude Desktop](https://claude.ai/download), and any MCP client.
+Give AI agents control of your Chrome browser. Works with [Claude Desktop](https://claude.ai/download), [Kiro CLI](https://kiro.dev), and any MCP client.
 
 The AI uses **your real browser** — your cookies, sessions, and logins. When it hits something it can't handle (sign-in, CAPTCHA, MFA), it asks you to step in, then continues where it left off.
 
@@ -8,28 +8,26 @@ The AI uses **your real browser** — your cookies, sessions, and logins. When i
 
 ### 1. Add MCP config
 
-**Kiro CLI** — add to `~/.kiro/settings/mcp.json`:
+Add to your MCP client's config (Claude Desktop, Cursor, etc.):
 
 ```json
 {
   "mcpServers": {
     "browser": {
       "command": "npx",
-      "args": ["-y", "github:smankoo/kiro-browser-use"]
+      "args": ["-y", "github:smankoo/open-browser-control"]
     }
   }
 }
 ```
 
-**Claude Desktop** — add the same to your MCP settings.
-
 ### 2. Load the Chrome extension
 
-The extension is auto-installed to `~/kiro-browser-use-extension/` on first run. Load it in Chrome:
+The extension is auto-installed to `~/open-browser-control-extension/` on first run. Load it in Chrome:
 
 1. Open `chrome://extensions/`
 2. Enable **Developer mode**
-3. Click **Load unpacked** → select `~/kiro-browser-use-extension/`
+3. Click **Load unpacked** → select `~/open-browser-control-extension/`
 
 That's it. The extension auto-connects when your agent starts. No servers to run, no buttons to click.
 
@@ -38,11 +36,11 @@ That's it. The extension auto-connects when your agent starts. No servers to run
 ## How It Works
 
 ```
-┌──────────────┐   MCP (stdio)   ┌──────────────────────┐   WebSocket   ┌──────────────────┐
-│  AI Agent    │◄───────────────►│  npx github:smankoo/kiro-browser-use │◄────────────►│ Chrome Extension │
-│  (Kiro CLI,  │  JSON-RPC 2.0  │  (MCP + bridge)       │  auto-connect │  (side panel +   │
-│  Claude, ..) │                 │  ws://localhost:9334  │               │   CDP control)   │
-└──────────────┘                 └──────────────────────┘               └──────────────────┘
+┌──────────────┐   MCP (stdio)   ┌───────────────────────────────────────┐   WebSocket   ┌──────────────────┐
+│  AI Agent    │◄───────────────►│  npx github:smankoo/open-browser-control │◄──────────►│ Chrome Extension │
+│  (Claude,    │  JSON-RPC 2.0  │  (MCP + bridge)                        │  auto-connect │  (side panel +   │
+│  Cursor, ..) │                 │  ws://localhost:9334                   │               │   CDP control)   │
+└──────────────┘                 └───────────────────────────────────────┘               └──────────────────┘
 ```
 
 1. Your agent starts the MCP server automatically (from the config above)
@@ -93,28 +91,12 @@ AI browsing → hits login page → calls browser_request_user("Please sign in")
 
 ---
 
-## Kiro Custom Agent
-
-For a dedicated browsing agent:
-
-```bash
-mkdir -p .kiro/agents
-npx github:smankoo/kiro-browser-use --extension  # ensure extension is installed
-cp node_modules/kiro-browser-use/kiro-agent/browser-agent.json .kiro/agents/browser.json
-```
-
-```bash
-kiro-cli agent browser "Find the pricing page on example.com"
-```
-
----
-
 ## Standalone Use (no MCP)
 
 If you're not using an MCP client:
 
 ```bash
-npx github:smankoo/kiro-browser-use --bridge    # starts WebSocket bridge only
+npx github:smankoo/open-browser-control --bridge    # starts WebSocket bridge only
 ```
 
 Connect your agent to `ws://localhost:9334` and send JSON messages:
@@ -130,11 +112,11 @@ Connect your agent to `ws://localhost:9334` and send JSON messages:
 ## CLI
 
 ```bash
-npx github:smankoo/kiro-browser-use                 # Start MCP server (default)
-npx github:smankoo/kiro-browser-use --bridge        # Standalone WebSocket bridge
-npx github:smankoo/kiro-browser-use --extension     # Print extension install path
-npx github:smankoo/kiro-browser-use --port 9000     # Custom port
-npx github:smankoo/kiro-browser-use --help          # Help
+npx github:smankoo/open-browser-control                 # Start MCP server (default)
+npx github:smankoo/open-browser-control --bridge        # Standalone WebSocket bridge
+npx github:smankoo/open-browser-control --extension     # Print extension install path
+npx github:smankoo/open-browser-control --port 9000     # Custom port
+npx github:smankoo/open-browser-control --help          # Help
 ```
 
 ---
@@ -142,8 +124,8 @@ npx github:smankoo/kiro-browser-use --help          # Help
 ## Development
 
 ```bash
-git clone https://github.com/smankoo/kiro-browser-use
-cd kiro-browser-use
+git clone https://github.com/smankoo/open-browser-control
+cd open-browser-control
 npm install
 npm run build    # builds extension to dist/ and packages to extension/
 npm run dev      # watch mode

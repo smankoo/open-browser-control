@@ -1,29 +1,28 @@
 {
-  "name": "kiro-browser-use",
+  "name": "open-browser-control",
   "version": "0.1.0",
-  "description": "Give AI agents control of your Chrome browser. Works with Kiro CLI, Claude Desktop, and any MCP client.",
+  "description": "Give AI agents control of your Chrome browser. Works with any MCP client.",
   "keywords": [
     "mcp",
     "browser",
     "chrome",
     "ai",
     "agent",
-    "kiro",
     "automation",
-    "chrome-extension"
+    "chrome-extension",
+    "open-browser-control"
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/smankoo/kiro-browser-use"
+    "url": "https://github.com/smankoo/open-browser-control"
   },
   "bin": {
-    "kiro-browser-use": "bridge-server/index.js"
+    "open-browser-control": "bridge-server/index.js"
   },
   "files": [
     "bridge-server/",
     "extension/",
-    "kiro-agent/",
     "README.md",
     "LICENSE"
   ],

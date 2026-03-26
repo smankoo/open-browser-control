@@ -137,12 +137,12 @@ export class WebSocketBridge {
       try {
         const parsed = JSON.parse(event.data as string);
         if (!isValidAgentMessage(parsed)) {
-          console.warn('[KiroBridge] Rejected invalid message:', parsed?.type);
+          console.warn('[OBCBridge] Rejected invalid message:', parsed?.type);
           return;
         }
         this.callbacks.onMessage(parsed);
       } catch (err) {
-        console.error('[KiroBridge] Failed to parse message:', err);
+        console.error('[OBCBridge] Failed to parse message:', err);
       }
     };
 
