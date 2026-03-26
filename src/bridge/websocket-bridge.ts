@@ -1,15 +1,17 @@
 /**
  * WebSocket bridge that connects the Chrome extension to an external AI agent.
- * The extension acts as a WebSocket CLIENT connecting to a local bridge server.
  *
- * Protocol: JSON messages over WebSocket
- * - Agent sends action messages
- * - Extension sends result/event messages
+ * The extension is always running (browser is always on). The agent comes and
+ * goes. So we poll at a steady interval — fast enough that the agent never
+ * waits, cheap enough that it doesn't matter when nothing is there.
+ *
+ * No exponential backoff. A failed connection to localhost is ~0 cost.
+ * The user should never notice a delay when they start their agent.
  */
 
 import type { AgentMessage, ExtensionMessage } from '../types/protocol';
 
-export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 
 export interface BridgeCallbacks {
   onMessage: (message: AgentMessage) => void;
@@ -17,17 +19,19 @@ export interface BridgeCallbacks {
 }
 
 const DEFAULT_PORT = 9334;
-const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000]; // Exponential backoff
+
+// Retry every 2 seconds. A failed WebSocket to localhost is essentially free.
+// This means worst case the agent waits <2s after starting its server.
+const POLL_INTERVAL = 2000;
 
 export class WebSocketBridge {
   private ws: WebSocket | null = null;
   private callbacks: BridgeCallbacks;
   private port: number;
-  private reconnectAttempt = 0;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
   private intentionalClose = false;
   private _status: ConnectionStatus = 'disconnected';
-  private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(callbacks: BridgeCallbacks, port?: number) {
     this.callbacks = callbacks;
@@ -39,41 +43,73 @@ export class WebSocketBridge {
   }
 
   private setStatus(status: ConnectionStatus) {
+    if (this._status === status) return;
     this._status = status;
     this.callbacks.onStatusChange(status);
   }
 
+  /** Start polling for the bridge. Call once on startup. */
   connect(): void {
+    this.intentionalClose = false;
+    this.tryConnect();
+    this.startPolling();
+  }
+
+  disconnect(): void {
+    this.intentionalClose = true;
+    this.stopPolling();
+    this.stopKeepalive();
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+    this.setStatus('disconnected');
+  }
+
+  send(message: ExtensionMessage): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message));
+    }
+  }
+
+  setPort(port: number): void {
+    const changed = this.port !== port;
+    this.port = port;
+    if (changed && !this.intentionalClose) {
+      // Reconnect on new port immediately
+      if (this.ws) {
+        this.ws.close();
+        this.ws = null;
+      }
+      this.tryConnect();
+    }
+  }
+
+  // ─── Internal ────────────────────────────────────────────────────────────
+
+  private tryConnect(): void {
+    // Already connected or mid-handshake — nothing to do
     if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) {
       return;
     }
 
-    this.intentionalClose = false;
-    this.setStatus('connecting');
-
     try {
       this.ws = new WebSocket(`ws://localhost:${this.port}`);
     } catch {
-      this.setStatus('error');
-      this.scheduleReconnect();
+      // Constructor can throw on invalid URL — shouldn't happen but be safe
       return;
     }
 
     this.ws.onopen = () => {
-      this.reconnectAttempt = 0;
       this.setStatus('connected');
-
-      // Send handshake
       this.send({
         type: 'event',
         event: 'connected',
         data: { version: '0.1.0' },
       } as ExtensionMessage);
-
-      // Start keepalive to prevent MV3 service worker from sleeping.
-      // Chrome 116+ keeps the SW alive while a WebSocket is open,
-      // but we send pings as a safety net for older versions.
       this.startKeepalive();
+      // Stop polling while connected — we'll restart on close
+      this.stopPolling();
     };
 
     this.ws.onmessage = (event) => {
@@ -87,44 +123,31 @@ export class WebSocketBridge {
 
     this.ws.onclose = () => {
       this.ws = null;
+      this.stopKeepalive();
       if (!this.intentionalClose) {
         this.setStatus('disconnected');
-        this.scheduleReconnect();
-      } else {
-        this.setStatus('disconnected');
+        // Agent went away. Start polling again so we reconnect fast when it's back.
+        this.startPolling();
       }
     };
 
     this.ws.onerror = () => {
-      // onclose will fire after this
-      this.setStatus('error');
+      // onclose fires after this — no need to do anything here
     };
   }
 
-  disconnect(): void {
-    this.intentionalClose = true;
-    this.stopKeepalive();
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-    this.setStatus('disconnected');
+  private startPolling(): void {
+    if (this.pollTimer) return; // Already polling
+    this.pollTimer = setInterval(() => {
+      this.tryConnect();
+    }, POLL_INTERVAL);
   }
 
-  send(message: ExtensionMessage): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
-    } else {
-      console.warn('[KiroBridge] Cannot send, not connected');
+  private stopPolling(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
     }
-  }
-
-  setPort(port: number): void {
-    this.port = port;
   }
 
   private startKeepalive(): void {
@@ -133,7 +156,7 @@ export class WebSocketBridge {
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify({ type: 'ping' }));
       }
-    }, 20000); // Every 20 seconds
+    }, 20000);
   }
 
   private stopKeepalive(): void {
@@ -141,18 +164,5 @@ export class WebSocketBridge {
       clearInterval(this.keepaliveTimer);
       this.keepaliveTimer = null;
     }
-  }
-
-  private scheduleReconnect(): void {
-    if (this.intentionalClose) return;
-    if (this.reconnectTimer) return;
-
-    const delay = RECONNECT_DELAYS[Math.min(this.reconnectAttempt, RECONNECT_DELAYS.length - 1)];
-    this.reconnectAttempt++;
-
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.connect();
-    }, delay);
   }
 }
