@@ -1,16 +1,31 @@
 {
   "name": "kiro-browser-use",
   "version": "0.1.0",
-  "description": "Chrome extension that connects AI agents (like Kiro CLI) to Chrome for collaborative browsing",
+  "description": "Give AI agents control of your Chrome browser. Works with Kiro CLI, Claude Desktop, and any MCP client.",
+  "keywords": ["mcp", "browser", "chrome", "ai", "agent", "kiro", "automation", "chrome-extension"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smankoo/kiro-browser-use"
+  },
   "bin": {
     "kiro-browser-use": "bridge-server/index.js"
   },
+  "files": [
+    "bridge-server/",
+    "extension/",
+    "kiro-agent/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "build": "webpack --mode production",
+    "build": "webpack --mode production && npm run package-extension",
+    "package-extension": "rm -rf extension && cp -r dist extension",
     "dev": "webpack --mode development --watch",
     "start": "node bridge-server/index.js",
     "bridge": "node bridge-server/server.js",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist extension",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.38",
