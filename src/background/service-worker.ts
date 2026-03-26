@@ -47,12 +47,16 @@ const bridge = new WebSocketBridge({
 });
 
 function handleStatusChange(status: ConnectionStatus): void {
+  const wasConnected = state.connected;
   state.connected = status === 'connected';
-  addLog({
-    source: 'system',
-    action: `Connection: ${status}`,
-    status: status === 'connected' ? 'success' : status === 'error' ? 'error' : 'pending',
-  });
+
+  // Only log transitions, not every poll attempt
+  if (status === 'connected' && !wasConnected) {
+    addLog({ source: 'system', action: 'Agent connected', status: 'success' });
+  } else if (status === 'disconnected' && wasConnected) {
+    addLog({ source: 'system', action: 'Agent disconnected', status: 'pending' });
+  }
+
   broadcastState();
 }
 
