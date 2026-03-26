@@ -135,6 +135,47 @@ Messages are JSON objects sent over WebSocket. Each action has a unique `id` for
 5. User clicks "Done - Hand back to AI" in the side panel
 6. Extension sends `user_done` event, AI resumes
 
+## Kiro CLI Integration
+
+### As an MCP Server
+
+Add to your Kiro MCP config (`~/.kiro/settings/mcp.json` or workspace `.kiro/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "browser": {
+      "command": "node",
+      "args": ["/path/to/kiro-browser-use/bridge-server/mcp-server.js"],
+      "env": { "BRIDGE_PORT": "9334" }
+    }
+  }
+}
+```
+
+Then in Kiro CLI, the browser tools are available as `@browser` tools:
+```
+> @browser browser_screenshot
+> @browser browser_click --text "Sign In"
+> @browser browser_navigate --url "https://example.com"
+```
+
+### As a Custom Agent
+
+Copy the agent config to your Kiro workspace:
+```bash
+cp kiro-agent/browser-agent.json .kiro/agents/browser.json
+```
+
+Then run it:
+```bash
+kiro-cli agent browser "Go to example.com and find the pricing page"
+```
+
+### Works with Claude Desktop Too
+
+Add the same MCP server config to Claude Desktop's settings to give Claude browser control through this extension.
+
 ## Integrating with Your AI Agent
 
 ### Python Example
