@@ -1,23 +1,25 @@
 /**
- * Protocol types for communication between AI agent and Chrome extension.
+ * Protocol types for communication between AI agents and Chrome extension.
  *
  * Message flow:
- *   AI Agent <-> Bridge Server <-> Chrome Extension (Background SW)
+ *   Agent A ──┐
+ *   Agent B ──┼──► Bridge Server ◄──► Chrome Extension
+ *   Agent C ──┘
  *
- * The protocol uses JSON messages with a type field and optional id for
- * request/response correlation.
+ * Every message carries a `session` field so the extension can route
+ * actions to the correct tab group and return results to the correct agent.
  */
 
 // ─── Agent → Extension Actions ───────────────────────────────────────────────
+// All actions carry a `session` field added by the bridge.
 
 export interface ScreenshotAction {
   type: 'action';
   action: 'screenshot';
   id: string;
+  session: string;
   params?: {
-    /** If true, capture full page (not just viewport) */
     fullPage?: boolean;
-    /** CSS selector to screenshot a specific element */
     selector?: string;
   };
 }
@@ -26,17 +28,13 @@ export interface ClickAction {
   type: 'action';
   action: 'click';
   id: string;
+  session: string;
   params: {
-    /** Click at specific coordinates */
     x?: number;
     y?: number;
-    /** Click element matching CSS selector */
     selector?: string;
-    /** Click element containing this text */
     text?: string;
-    /** Click type */
     button?: 'left' | 'right' | 'middle';
-    /** Number of clicks (1=single, 2=double) */
     clickCount?: number;
   };
 }
@@ -45,14 +43,11 @@ export interface TypeAction {
   type: 'action';
   action: 'type';
   id: string;
+  session: string;
   params: {
-    /** Text to type */
     text: string;
-    /** Optional selector to focus first */
     selector?: string;
-    /** If true, clear field before typing */
     clear?: boolean;
-    /** If true, press Enter after typing */
     pressEnter?: boolean;
   };
 }
@@ -61,10 +56,9 @@ export interface KeyPressAction {
   type: 'action';
   action: 'keypress';
   id: string;
+  session: string;
   params: {
-    /** Key to press (e.g., 'Enter', 'Tab', 'Escape', 'ArrowDown') */
     key: string;
-    /** Modifier keys */
     modifiers?: ('ctrl' | 'alt' | 'shift' | 'meta')[];
   };
 }
@@ -73,12 +67,10 @@ export interface ScrollAction {
   type: 'action';
   action: 'scroll';
   id: string;
+  session: string;
   params: {
-    /** Direction to scroll */
     direction: 'up' | 'down' | 'left' | 'right';
-    /** Amount in pixels (default: 500) */
     amount?: number;
-    /** Scroll within a specific element */
     selector?: string;
   };
 }
@@ -87,6 +79,7 @@ export interface NavigateAction {
   type: 'action';
   action: 'navigate';
   id: string;
+  session: string;
   params: {
     url: string;
   };
@@ -96,16 +89,12 @@ export interface WaitAction {
   type: 'action';
   action: 'wait';
   id: string;
+  session: string;
   params: {
-    /** Wait for element matching selector */
     selector?: string;
-    /** Wait for specific text to appear */
     text?: string;
-    /** Wait fixed milliseconds */
     ms?: number;
-    /** Wait for navigation to complete */
     navigation?: boolean;
-    /** Timeout in ms (default: 10000) */
     timeout?: number;
   };
 }
@@ -114,10 +103,9 @@ export interface GetDomAction {
   type: 'action';
   action: 'get_dom';
   id: string;
+  session: string;
   params?: {
-    /** Return simplified accessibility tree instead of full DOM */
     simplified?: boolean;
-    /** CSS selector to scope the DOM extraction */
     selector?: string;
   };
 }
@@ -126,14 +114,15 @@ export interface GetPageInfoAction {
   type: 'action';
   action: 'get_page_info';
   id: string;
+  session: string;
 }
 
 export interface ExecuteJsAction {
   type: 'action';
   action: 'execute_js';
   id: string;
+  session: string;
   params: {
-    /** JavaScript expression to evaluate */
     expression: string;
   };
 }
@@ -142,6 +131,7 @@ export interface SelectOptionAction {
   type: 'action';
   action: 'select_option';
   id: string;
+  session: string;
   params: {
     selector: string;
     value?: string;
@@ -153,6 +143,7 @@ export interface HoverAction {
   type: 'action';
   action: 'hover';
   id: string;
+  session: string;
   params: {
     x?: number;
     y?: number;
@@ -165,10 +156,9 @@ export interface RequestUserAction {
   type: 'action';
   action: 'request_user';
   id: string;
+  session: string;
   params: {
-    /** Message to show the user explaining what they need to do */
     message: string;
-    /** Optional timeout in ms before AI resumes automatically */
     timeout?: number;
   };
 }
@@ -177,6 +167,7 @@ export interface NewTabAction {
   type: 'action';
   action: 'new_tab';
   id: string;
+  session: string;
   params: {
     url?: string;
   };
@@ -186,12 +177,14 @@ export interface CloseTabAction {
   type: 'action';
   action: 'close_tab';
   id: string;
+  session: string;
 }
 
 export interface SwitchTabAction {
   type: 'action';
   action: 'switch_tab';
   id: string;
+  session: string;
   params: {
     tabId: number;
   };
@@ -201,6 +194,7 @@ export interface ListTabsAction {
   type: 'action';
   action: 'list_tabs';
   id: string;
+  session: string;
 }
 
 export type AgentAction =
@@ -227,20 +221,34 @@ export type AgentAction =
 export interface ActionSuccess {
   type: 'result';
   id: string;
+  session?: string;
   success: true;
   data: Record<string, unknown>;
-  /** Page state after the action (URL, title, etc.) */
   pageState?: PageState;
 }
 
 export interface ActionError {
   type: 'result';
   id: string;
+  session?: string;
   success: false;
   error: string;
 }
 
 export type ActionResult = ActionSuccess | ActionError;
+
+// ─── Session Lifecycle ───────────────────────────────────────────────────────
+
+export interface SessionStartMessage {
+  type: 'session_start';
+  session: string;
+  name: string;
+}
+
+export interface SessionEndMessage {
+  type: 'session_end';
+  session: string;
+}
 
 // ─── Extension → Agent Events ────────────────────────────────────────────────
 
@@ -253,20 +261,21 @@ export interface PageState {
 export interface UserHandoffEvent {
   type: 'event';
   event: 'user_handoff';
-  /** User took control */
+  session: string;
   data: { message: string };
 }
 
 export interface UserDoneEvent {
   type: 'event';
   event: 'user_done';
-  /** User finished and handed back to AI */
+  session: string;
   data: { message?: string };
 }
 
 export interface PageNavigatedEvent {
   type: 'event';
   event: 'page_navigated';
+  session: string;
   data: PageState;
 }
 
@@ -295,11 +304,13 @@ export interface PongMessage {
 export interface GetToolSchemaMessage {
   type: 'get_tool_schema';
   id: string;
+  session: string;
 }
 
 export interface ToolSchemaResponse {
   type: 'tool_schema';
   id: string;
+  session: string;
   tools: ToolDefinition[];
 }
 
@@ -311,8 +322,8 @@ export interface ToolDefinition {
 
 // ─── Union Types ─────────────────────────────────────────────────────────────
 
-export type AgentMessage = AgentAction | PingMessage | GetToolSchemaMessage;
-export type ExtensionMessage = ActionResult | ExtensionEvent | PongMessage | ToolSchemaResponse;
+export type AgentMessage = AgentAction | PingMessage | GetToolSchemaMessage | SessionStartMessage | SessionEndMessage;
+export type ExtensionMessage = ActionResult | ExtensionEvent | PongMessage | ToolSchemaResponse | SessionStartMessage | SessionEndMessage;
 export type AnyMessage = AgentMessage | ExtensionMessage;
 
 // ─── Internal Extension Messages (between background/sidepanel/content) ──────
@@ -327,18 +338,28 @@ export interface InternalMessage {
 
 export type ControlMode = 'ai' | 'user' | 'collaborative';
 
-export interface SessionState {
-  connected: boolean;
-  controlMode: ControlMode;
+/** Per-session state tracked by the extension */
+export interface AgentSession {
+  id: string;
+  name: string;
+  tabGroupId: number | null;
   activeTabId: number | null;
-  debuggerAttached: boolean;
-  actionLog: ActionLogEntry[];
+  controlMode: ControlMode;
   pendingUserAction: string | null;
+  pendingUserActionId: string | null;
+}
+
+/** Overall extension state broadcast to the side panel */
+export interface ExtensionState {
+  connected: boolean;
+  sessions: AgentSession[];
+  actionLog: ActionLogEntry[];
 }
 
 export interface ActionLogEntry {
   timestamp: number;
   source: 'ai' | 'user' | 'system';
+  session?: string;
   action: string;
   details?: string;
   status: 'pending' | 'success' | 'error';

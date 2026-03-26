@@ -22,7 +22,7 @@
         <span class="status-dot disconnected"></span>
         <div class="status-text">
           <span id="status-message">Waiting for agent on port <strong id="port-display">9334</strong></span>
-          <span id="status-hint" class="hint">The extension auto-connects when an agent starts.</span>
+          <span id="status-hint" class="hint">Auto-connects when an agent starts.</span>
         </div>
       </div>
       <details class="settings-details">
@@ -36,50 +36,12 @@
             </div>
           </div>
           <button id="reconnect-btn" class="btn btn-small">Reconnect Now</button>
-          <button id="disconnect-btn" class="btn btn-small btn-danger hidden">Disconnect</button>
         </div>
       </details>
     </section>
 
-    <!-- Control Mode -->
-    <section id="control-panel" class="panel">
-      <h2>Control</h2>
-      <div class="control-modes">
-        <button class="mode-btn active" data-mode="collaborative" title="Both user and AI can interact">
-          <span class="mode-icon">&#x1f91d;</span>
-          <span>Collaborative</span>
-        </button>
-        <button class="mode-btn" data-mode="ai" title="AI has full control">
-          <span class="mode-icon">&#x1f916;</span>
-          <span>AI Control</span>
-        </button>
-        <button class="mode-btn" data-mode="user" title="User has control, AI paused">
-          <span class="mode-icon">&#x1f464;</span>
-          <span>User Control</span>
-        </button>
-      </div>
-    </section>
-
-    <!-- User Action Request -->
-    <section id="user-action-panel" class="panel hidden">
-      <div class="user-action-alert">
-        <h3>AI needs your help</h3>
-        <p id="user-action-message"></p>
-        <div class="input-group">
-          <textarea id="user-done-message" placeholder="Optional: describe what you did..." rows="2"></textarea>
-        </div>
-        <button id="user-done-btn" class="btn btn-primary btn-block">Done - Hand back to AI</button>
-      </div>
-    </section>
-
-    <!-- Active Tab -->
-    <section id="tab-panel" class="panel">
-      <h2>Active Tab</h2>
-      <div id="active-tab-info" class="tab-info">
-        <span class="tab-title">No tab selected</span>
-        <span class="tab-url"></span>
-      </div>
-    </section>
+    <!-- Sessions (dynamically rendered) -->
+    <div id="sessions-container"></div>
 
     <!-- Action Log -->
     <section id="log-panel" class="panel">

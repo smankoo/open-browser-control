@@ -3,38 +3,29 @@
 /**
  * MCP Server for Kiro Browser Use
  *
- * This is a self-contained MCP server that:
- *   1. Starts the WebSocket bridge (so the Chrome extension can connect)
- *   2. Exposes browser tools via MCP (JSON-RPC over stdio)
+ * Connects to the bridge server as an agent client with its own session.
+ * If no bridge is running, starts one.
  *
- * ONE process. No separate bridge server needed.
- *
- * Usage — add to ~/.kiro/settings/mcp.json or .kiro/mcp.json:
- *
- *   {
- *     "mcpServers": {
- *       "browser": {
- *         "command": "node",
- *         "args": ["/path/to/kiro-browser-use/bridge-server/mcp-server.js"]
- *       }
- *     }
- *   }
- *
- * Also works with Claude Desktop, Cursor, or any MCP client.
+ * MCP config:
+ *   {"command": "npx", "args": ["-y", "kiro-browser-use"]}
  */
 
-const { WebSocketServer, WebSocket } = require('ws');
+const { WebSocket } = require('ws');
+const { spawn } = require('child_process');
 const readline = require('readline');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const net = require('net');
+const crypto = require('crypto');
 
 const BRIDGE_PORT = parseInt(process.env.BRIDGE_PORT || '9334', 10);
 const SERVER_NAME = 'kiro-browser-use';
 const SERVER_VERSION = '0.1.0';
+const SESSION_ID = crypto.randomUUID().slice(0, 8);
+const SESSION_NAME = process.env.KIRO_SESSION_NAME || `MCP-${SESSION_ID}`;
 
-// Screenshots are saved to a temp directory and paths are returned to the agent.
-// Kiro CLI (and many other agents) can't handle inline base64 images — they need file paths.
+// Screenshots saved to disk, paths returned to agent
 const SCREENSHOT_DIR = path.join(os.tmpdir(), 'kiro-browser-use-screenshots');
 fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 let screenshotCounter = 0;
@@ -46,76 +37,37 @@ function saveScreenshot(base64Data) {
   return filepath;
 }
 
-// ─── Embedded Bridge Server ──────────────────────────────────────────────────
-// The MCP server runs its own WebSocket server. The Chrome extension connects
-// to it automatically. Actions go: MCP request -> WS message -> extension -> WS response -> MCP result.
+// ─── Bridge Connection ───────────────────────────────────────────────────────
 
-const wss = new WebSocketServer({ port: BRIDGE_PORT });
-let extensionSocket = null;
+let ws = null;
+let wsReady = false;
 let actionId = 0;
 const pendingActions = new Map();
 
-log(`Bridge server listening on ws://localhost:${BRIDGE_PORT}`);
+function connectToBridge() {
+  ws = new WebSocket(`ws://localhost:${BRIDGE_PORT}`);
 
-wss.on('connection', (ws) => {
-  if (!extensionSocket) {
-    extensionSocket = ws;
-    log('Chrome extension connected');
-
-    ws.on('message', (data) => {
-      try {
-        const msg = JSON.parse(data.toString());
-
-        // Route results back to pending MCP requests
-        if ((msg.type === 'result' || msg.type === 'tool_schema') && pendingActions.has(msg.id)) {
-          const { resolve } = pendingActions.get(msg.id);
-          pendingActions.delete(msg.id);
-          resolve(msg);
-        }
-      } catch (err) {
-        log(`Parse error: ${err.message}`);
-      }
-    });
-
-    ws.on('close', () => {
-      log('Chrome extension disconnected');
-      extensionSocket = null;
-      // Reject all pending actions
-      for (const [id, { reject }] of pendingActions) {
-        reject(new Error('Extension disconnected'));
-        pendingActions.delete(id);
-      }
-    });
-  } else {
-    log('Extra connection rejected (extension already connected)');
-    ws.close(4000, 'Extension already connected');
-  }
-});
-
-wss.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    log(`Port ${BRIDGE_PORT} already in use. Another bridge may be running. Connecting as client instead.`);
-    connectAsClient();
-  } else {
-    log(`Bridge error: ${err.message}`);
-  }
-});
-
-// Fallback: if port is taken, connect as a WS client to the existing bridge
-let fallbackWs = null;
-
-function connectAsClient() {
-  wss.close();
-  fallbackWs = new WebSocket(`ws://localhost:${BRIDGE_PORT}`);
-
-  fallbackWs.on('open', () => {
-    log('Connected to existing bridge server as client');
-    extensionSocket = { send: (msg) => fallbackWs.send(msg), readyState: WebSocket.OPEN };
+  ws.on('open', () => {
+    // Register our session with the bridge
+    ws.send(JSON.stringify({
+      type: 'session_start',
+      session: SESSION_ID,
+      name: SESSION_NAME,
+    }));
   });
 
-  fallbackWs.on('message', (data) => {
+  ws.on('message', (data) => {
     try {
       const msg = JSON.parse(data.toString());
+
+      // Bridge confirms our session
+      if (msg.type === 'session_started') {
+        wsReady = true;
+        log(`Session registered: ${msg.session} ("${msg.name}")`);
+        return;
+      }
+
+      // Route results back to pending MCP requests
       if ((msg.type === 'result' || msg.type === 'tool_schema') && pendingActions.has(msg.id)) {
         const { resolve } = pendingActions.get(msg.id);
         pendingActions.delete(msg.id);
@@ -126,29 +78,36 @@ function connectAsClient() {
     }
   });
 
-  fallbackWs.on('close', () => {
-    log('Disconnected from bridge');
-    extensionSocket = null;
-    setTimeout(connectAsClient, 3000);
+  ws.on('close', () => {
+    wsReady = false;
+    log('Disconnected from bridge, reconnecting in 2s...');
+    // Reject pending actions
+    for (const [id, { reject }] of pendingActions) {
+      reject(new Error('Bridge disconnected'));
+      pendingActions.delete(id);
+    }
+    setTimeout(connectToBridge, 2000);
   });
 
-  fallbackWs.on('error', () => {});
+  ws.on('error', () => {});
 }
-
-// ─── Action Sender ───────────────────────────────────────────────────────────
 
 function sendAction(action, params = {}) {
   return new Promise((resolve, reject) => {
-    if (!extensionSocket || extensionSocket.readyState !== WebSocket.OPEN) {
-      reject(new Error('Chrome extension not connected. Make sure the extension is installed and the side panel is open.'));
+    if (!wsReady || !ws || ws.readyState !== WebSocket.OPEN) {
+      reject(new Error(
+        'Chrome extension not connected. Make sure:\n' +
+        '1. The extension is installed in Chrome\n' +
+        '2. Chrome is running'
+      ));
       return;
     }
 
-    const id = `mcp-${++actionId}`;
-    const message = { type: 'action', action, id, params };
+    const id = `${SESSION_ID}-${++actionId}`;
+    const message = { type: 'action', action, id, session: SESSION_ID, params };
 
     pendingActions.set(id, { resolve, reject });
-    extensionSocket.send(JSON.stringify(message));
+    ws.send(JSON.stringify(message));
 
     setTimeout(() => {
       if (pendingActions.has(id)) {
@@ -157,6 +116,40 @@ function sendAction(action, params = {}) {
       }
     }, 30000);
   });
+}
+
+// ─── Start or Connect to Bridge ──────────────────────────────────────────────
+
+function isPortInUse(port) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(500);
+    socket.on('connect', () => { socket.destroy(); resolve(true); });
+    socket.on('timeout', () => { socket.destroy(); resolve(false); });
+    socket.on('error', () => { socket.destroy(); resolve(false); });
+    socket.connect(port, '127.0.0.1');
+  });
+}
+
+async function ensureBridge() {
+  const inUse = await isPortInUse(BRIDGE_PORT);
+
+  if (inUse) {
+    log(`Bridge already running on port ${BRIDGE_PORT}, connecting as client`);
+  } else {
+    log(`Starting bridge server on port ${BRIDGE_PORT}...`);
+    const bridgePath = path.join(__dirname, 'server.js');
+    const child = spawn(process.execPath, [bridgePath, '--port', String(BRIDGE_PORT)], {
+      stdio: 'ignore',
+      detached: true,
+    });
+    child.unref();
+
+    // Wait briefly for it to start
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  connectToBridge();
 }
 
 // ─── MCP Tool Definitions ────────────────────────────────────────────────────
@@ -301,7 +294,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'browser_list_tabs',
-    description: 'List all open browser tabs with their IDs, URLs, and titles.',
+    description: 'List all open browser tabs in this session.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -320,12 +313,7 @@ const MCP_TOOLS = [
     description: 'Move mouse over an element to trigger hover effects.',
     inputSchema: {
       type: 'object',
-      properties: {
-        selector: { type: 'string' },
-        text: { type: 'string' },
-        x: { type: 'number' },
-        y: { type: 'number' },
-      },
+      properties: { selector: { type: 'string' }, text: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' } },
     },
   },
   {
@@ -365,7 +353,7 @@ const TOOL_TO_ACTION = {
 // ─── MCP JSON-RPC Handler ────────────────────────────────────────────────────
 
 function log(msg) {
-  process.stderr.write(`[${SERVER_NAME}] ${msg}\n`);
+  process.stderr.write(`[${SERVER_NAME}:${SESSION_ID}] ${msg}\n`);
 }
 
 function sendJsonRpc(obj) {
@@ -415,15 +403,12 @@ async function handleRequest(request) {
 
         if (result.success) {
           const summary = { ...result.data };
-
           if (summary.screenshot) {
-            // Save to disk and return the file path
             const filepath = saveScreenshot(summary.screenshot);
             summary.screenshot_path = filepath;
             delete summary.screenshot;
             log(`Screenshot saved: ${filepath}`);
           }
-
           if (result.pageState) summary.pageState = result.pageState;
           content.push({ type: 'text', text: JSON.stringify(summary, null, 2) });
           sendResult(id, { content });
@@ -460,7 +445,6 @@ const rl = readline.createInterface({ input: process.stdin, terminal: false });
 rl.on('line', (line) => {
   const trimmed = line.trim();
   if (!trimmed) return;
-
   try {
     const request = JSON.parse(trimmed);
     handleRequest(request).catch((err) => {
@@ -474,13 +458,16 @@ rl.on('line', (line) => {
 
 rl.on('close', () => {
   log('stdin closed, shutting down');
-  wss.close();
+  if (ws) ws.close();
   process.exit(0);
 });
 
 // ─── Cleanup ─────────────────────────────────────────────────────────────────
 
-process.on('SIGINT', () => { wss.close(); process.exit(0); });
-process.on('SIGTERM', () => { wss.close(); process.exit(0); });
+process.on('SIGINT', () => { if (ws) ws.close(); process.exit(0); });
+process.on('SIGTERM', () => { if (ws) ws.close(); process.exit(0); });
 
-log(`MCP server ready. Bridge on ws://localhost:${BRIDGE_PORT}. Waiting for Chrome extension...`);
+// ─── Start ───────────────────────────────────────────────────────────────────
+
+ensureBridge();
+log(`MCP server ready (session: ${SESSION_ID})`);
