@@ -353,6 +353,8 @@ export interface AgentSession {
   controlMode: ControlMode;
   pendingUserAction: string | null;
   pendingUserActionId: string | null;
+  /** Tab IDs owned by this session — fallback isolation when tab groups are unavailable */
+  ownedTabIds: Set<number>;
 }
 
 /** Overall extension state broadcast to the side panel */
