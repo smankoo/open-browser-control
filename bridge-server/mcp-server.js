@@ -23,7 +23,7 @@ const BRIDGE_PORT = parseInt(process.env.BRIDGE_PORT || '9334', 10);
 const SERVER_NAME = 'kiro-browser-use';
 const SERVER_VERSION = '0.1.0';
 const SESSION_ID = crypto.randomUUID().slice(0, 8);
-const SESSION_NAME = process.env.KIRO_SESSION_NAME || `MCP-${SESSION_ID}`;
+let sessionName = process.env.KIRO_sessionName || `MCP-${SESSION_ID}`;
 
 // Screenshots saved to disk, paths returned to agent
 const SCREENSHOT_DIR = path.join(os.tmpdir(), 'kiro-browser-use-screenshots');
@@ -52,7 +52,7 @@ function connectToBridge() {
     ws.send(JSON.stringify({
       type: 'session_start',
       session: SESSION_ID,
-      name: SESSION_NAME,
+      name: sessionName,
     }));
   });
 
@@ -90,6 +90,16 @@ function connectToBridge() {
   });
 
   ws.on('error', () => {});
+}
+
+function updateSessionName(name) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'session_update',
+      session: SESSION_ID,
+      name,
+    }));
+  }
 }
 
 function sendAction(action, params = {}) {
@@ -329,6 +339,17 @@ const MCP_TOOLS = [
       required: ['selector'],
     },
   },
+  {
+    name: 'browser_set_session_name',
+    description: 'Set a descriptive name for this browser session. The name appears on the Chrome tab group so the user can identify what task this session is working on. Call this early with a short task summary (e.g. "Search flights to Paris", "Debug login page").',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Short descriptive name for this session (shown on Chrome tab group)' },
+      },
+      required: ['name'],
+    },
+  },
 ];
 
 const TOOL_TO_ACTION = {
@@ -372,13 +393,20 @@ async function handleRequest(request) {
   const { id, method, params } = request;
 
   switch (method) {
-    case 'initialize':
+    case 'initialize': {
+      // Capture the MCP client's name (e.g. "kiro-cli", "claude-desktop", "cursor")
+      const clientName = params?.clientInfo?.name;
+      if (clientName && !process.env.KIRO_SESSION_NAME) {
+        sessionName = clientName;
+        updateSessionName(sessionName);
+      }
       sendResult(id, {
         protocolVersion: '2024-11-05',
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
       });
       break;
+    }
 
     case 'notifications/initialized':
       break;
@@ -390,6 +418,23 @@ async function handleRequest(request) {
     case 'tools/call': {
       const toolName = params?.name;
       const args = params?.arguments || {};
+
+      // Handle local tools (not forwarded to extension)
+      if (toolName === 'browser_set_session_name') {
+        const newName = args.name;
+        if (!newName) {
+          sendError(id, -32602, 'Missing required parameter: name');
+          return;
+        }
+        sessionName = newName;
+        updateSessionName(newName);
+        log(`Session renamed to "${newName}"`);
+        sendResult(id, {
+          content: [{ type: 'text', text: `Session name set to "${newName}"` }],
+        });
+        return;
+      }
+
       const actionName = TOOL_TO_ACTION[toolName];
 
       if (!actionName) {

@@ -129,6 +129,14 @@ wss.on('connection', (ws) => {
       // Agent → tag with session and forward to extension
       const sessionId = socketToSession.get(ws);
       if (sessionId) {
+        // Handle session name updates
+        if (msg.type === 'session_update') {
+          const session = agentSessions.get(sessionId);
+          if (session) {
+            session.name = msg.name || session.name;
+            log(`Agent "${session.name}" renamed (session: ${sessionId})`);
+          }
+        }
         msg.session = sessionId;
         sendToExtension(msg);
       }
