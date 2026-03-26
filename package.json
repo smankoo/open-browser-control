@@ -2,10 +2,13 @@
   "name": "kiro-browser-use",
   "version": "0.1.0",
   "description": "Chrome extension that connects AI agents (like Kiro CLI) to Chrome for collaborative browsing",
-  "private": true,
+  "bin": {
+    "kiro-browser-use": "bridge-server/index.js"
+  },
   "scripts": {
     "build": "webpack --mode production",
     "dev": "webpack --mode development --watch",
+    "start": "node bridge-server/index.js",
     "bridge": "node bridge-server/server.js",
     "clean": "rm -rf dist"
   },

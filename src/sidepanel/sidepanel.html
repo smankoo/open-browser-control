@@ -12,23 +12,33 @@
     <header id="header">
       <div class="header-title">
         <h1>Kiro Browser</h1>
-        <span id="status-badge" class="badge disconnected">Disconnected</span>
+        <span id="status-badge" class="badge disconnected">Waiting for agent...</span>
       </div>
     </header>
 
-    <!-- Connection Panel -->
+    <!-- Connection Status -->
     <section id="connection-panel" class="panel">
-      <div class="input-group">
-        <label for="port-input">Bridge Port</label>
-        <div class="input-row">
-          <input type="number" id="port-input" value="9334" min="1024" max="65535">
-          <button id="connect-btn" class="btn btn-primary">Connect</button>
+      <div id="connection-status" class="connection-status">
+        <span class="status-dot disconnected"></span>
+        <div class="status-text">
+          <span id="status-message">Waiting for agent on port <strong id="port-display">9334</strong></span>
+          <span id="status-hint" class="hint">The extension auto-connects when an agent starts.</span>
         </div>
       </div>
-      <label class="checkbox-label">
-        <input type="checkbox" id="auto-connect-checkbox">
-        <span>Auto-connect on startup</span>
-      </label>
+      <details class="settings-details">
+        <summary>Settings</summary>
+        <div class="settings-content">
+          <div class="input-group">
+            <label for="port-input">Bridge Port</label>
+            <div class="input-row">
+              <input type="number" id="port-input" value="9334" min="1024" max="65535">
+              <button id="save-port-btn" class="btn btn-small">Save</button>
+            </div>
+          </div>
+          <button id="reconnect-btn" class="btn btn-small">Reconnect Now</button>
+          <button id="disconnect-btn" class="btn btn-small btn-danger hidden">Disconnect</button>
+        </div>
+      </details>
     </section>
 
     <!-- Control Mode -->
@@ -78,7 +88,7 @@
         <button id="clear-log-btn" class="btn btn-small">Clear</button>
       </div>
       <div id="action-log" class="action-log">
-        <div class="log-empty">No activity yet. Connect to a bridge server to start.</div>
+        <div class="log-empty">Waiting for agent to connect...</div>
       </div>
     </section>
   </div>

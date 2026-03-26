@@ -1,7 +1,7 @@
 /**
  * Side panel UI controller.
- * Communicates with the background service worker to display state
- * and handle user interactions.
+ * The extension auto-connects to the bridge on startup. This panel just
+ * shows what's happening and lets the user adjust control modes.
  */
 
 import type { SessionState, ControlMode, ActionLogEntry } from '../types/protocol';
@@ -9,9 +9,14 @@ import type { SessionState, ControlMode, ActionLogEntry } from '../types/protoco
 // ─── DOM Elements ────────────────────────────────────────────────────────────
 
 const statusBadge = document.getElementById('status-badge')!;
+const statusDot = document.querySelector('.status-dot')!;
+const statusMessage = document.getElementById('status-message')!;
+const statusHint = document.getElementById('status-hint')!;
+const portDisplay = document.getElementById('port-display')!;
 const portInput = document.getElementById('port-input') as HTMLInputElement;
-const connectBtn = document.getElementById('connect-btn')!;
-const autoConnectCheckbox = document.getElementById('auto-connect-checkbox') as HTMLInputElement;
+const savePortBtn = document.getElementById('save-port-btn')!;
+const reconnectBtn = document.getElementById('reconnect-btn')!;
+const disconnectBtn = document.getElementById('disconnect-btn')!;
 const modeButtons = document.querySelectorAll<HTMLButtonElement>('.mode-btn');
 const userActionPanel = document.getElementById('user-action-panel')!;
 const userActionMessage = document.getElementById('user-action-message')!;
@@ -31,7 +36,6 @@ function sendToBackground(type: string, data?: Record<string, unknown>): Promise
   return chrome.runtime.sendMessage({ source: 'sidepanel', type, ...data });
 }
 
-// Listen for state updates from background
 chrome.runtime.onMessage.addListener((message) => {
   if (message.source === 'background' && message.type === 'state_update') {
     currentState = message.data as SessionState;
@@ -41,19 +45,25 @@ chrome.runtime.onMessage.addListener((message) => {
 
 // ─── Event Handlers ──────────────────────────────────────────────────────────
 
-connectBtn.addEventListener('click', async () => {
-  if (currentState?.connected) {
+savePortBtn.addEventListener('click', async () => {
+  const port = parseInt(portInput.value, 10);
+  if (port >= 1024 && port <= 65535) {
+    await chrome.storage.local.set({ bridgePort: port });
+    portDisplay.textContent = String(port);
+    // Reconnect with new port
     await sendToBackground('disconnect');
-  } else {
-    const port = parseInt(portInput.value, 10);
     await sendToBackground('connect', { port });
-    // Save port
-    chrome.storage.local.set({ bridgePort: port });
   }
 });
 
-autoConnectCheckbox.addEventListener('change', () => {
-  chrome.storage.local.set({ autoConnect: autoConnectCheckbox.checked });
+reconnectBtn.addEventListener('click', async () => {
+  const port = parseInt(portInput.value, 10);
+  await sendToBackground('disconnect');
+  await sendToBackground('connect', { port });
+});
+
+disconnectBtn.addEventListener('click', async () => {
+  await sendToBackground('disconnect');
 });
 
 modeButtons.forEach((btn) => {
@@ -81,19 +91,21 @@ clearLogBtn.addEventListener('click', () => {
 function render(): void {
   if (!currentState) return;
 
-  // Status badge
+  // Connection status
   if (currentState.connected) {
     statusBadge.textContent = 'Connected';
     statusBadge.className = 'badge connected';
-    connectBtn.textContent = 'Disconnect';
-    connectBtn.classList.add('btn-danger');
-    connectBtn.classList.remove('btn-primary');
+    statusDot.className = 'status-dot connected';
+    statusMessage.innerHTML = 'Agent connected';
+    statusHint.textContent = '';
+    disconnectBtn.classList.remove('hidden');
   } else {
-    statusBadge.textContent = 'Disconnected';
+    statusBadge.textContent = 'Waiting for agent...';
     statusBadge.className = 'badge disconnected';
-    connectBtn.textContent = 'Connect';
-    connectBtn.classList.remove('btn-danger');
-    connectBtn.classList.add('btn-primary');
+    statusDot.className = 'status-dot disconnected';
+    statusMessage.innerHTML = `Waiting for agent on port <strong>${portDisplay.textContent}</strong>`;
+    statusHint.textContent = 'Auto-connects when an agent starts. Run: npm run bridge';
+    disconnectBtn.classList.add('hidden');
   }
 
   // Control modes
@@ -128,11 +140,10 @@ function render(): void {
 
 function renderLog(entries: ActionLogEntry[]): void {
   if (entries.length === 0) {
-    actionLog.innerHTML = '<div class="log-empty">No activity yet. Connect to a bridge server to start.</div>';
+    actionLog.innerHTML = '<div class="log-empty">Waiting for agent to connect...</div>';
     return;
   }
 
-  // Only render the last 50 entries
   const recent = entries.slice(-50);
   actionLog.innerHTML = recent.map((entry) => {
     const time = new Date(entry.timestamp).toLocaleTimeString('en-US', {
@@ -155,7 +166,6 @@ function renderLog(entries: ActionLogEntry[]): void {
     `;
   }).join('');
 
-  // Scroll to bottom
   actionLog.scrollTop = actionLog.scrollHeight;
 }
 
@@ -168,12 +178,14 @@ function escapeHtml(str: string): string {
 // ─── Init ────────────────────────────────────────────────────────────────────
 
 async function init(): Promise<void> {
-  // Load saved settings
-  const stored = await chrome.storage.local.get(['bridgePort', 'autoConnect']);
-  if (stored.bridgePort) portInput.value = String(stored.bridgePort);
-  if (stored.autoConnect) autoConnectCheckbox.checked = true;
+  // Load saved port
+  const stored = await chrome.storage.local.get(['bridgePort']);
+  if (stored.bridgePort) {
+    portInput.value = String(stored.bridgePort);
+    portDisplay.textContent = String(stored.bridgePort);
+  }
 
-  // Get initial state
+  // Get initial state from background
   try {
     const state = await sendToBackground('get_state');
     if (state) {
@@ -181,7 +193,7 @@ async function init(): Promise<void> {
       render();
     }
   } catch {
-    // Background may not be ready
+    // Background may not be ready yet
   }
 }
 

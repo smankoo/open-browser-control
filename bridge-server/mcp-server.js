@@ -3,61 +3,104 @@
 /**
  * MCP Server for Kiro Browser Use
  *
- * Implements the Model Context Protocol (MCP) over stdio, making the browser
- * extension's capabilities available as MCP tools that Kiro CLI (and other
- * MCP-compatible agents like Claude Desktop) can discover and call.
+ * This is a self-contained MCP server that:
+ *   1. Starts the WebSocket bridge (so the Chrome extension can connect)
+ *   2. Exposes browser tools via MCP (JSON-RPC over stdio)
  *
- * Usage:
- *   # As a Kiro MCP server (add to ~/.kiro/settings/mcp.json):
+ * ONE process. No separate bridge server needed.
+ *
+ * Usage — add to ~/.kiro/settings/mcp.json or .kiro/mcp.json:
+ *
  *   {
  *     "mcpServers": {
  *       "browser": {
  *         "command": "node",
- *         "args": ["/path/to/kiro-browser-use/bridge-server/mcp-server.js"],
- *         "env": { "BRIDGE_PORT": "9334" }
+ *         "args": ["/path/to/kiro-browser-use/bridge-server/mcp-server.js"]
  *       }
  *     }
  *   }
  *
- * This server connects to the bridge server as a WebSocket client and
- * translates MCP JSON-RPC requests into the extension's action protocol.
+ * Also works with Claude Desktop, Cursor, or any MCP client.
  */
 
-const WebSocket = require('ws');
+const { WebSocketServer, WebSocket } = require('ws');
 const readline = require('readline');
 
 const BRIDGE_PORT = parseInt(process.env.BRIDGE_PORT || '9334', 10);
 const SERVER_NAME = 'kiro-browser-use';
 const SERVER_VERSION = '0.1.0';
 
-// ─── WebSocket Connection to Bridge ──────────────────────────────────────────
+// ─── Embedded Bridge Server ──────────────────────────────────────────────────
+// The MCP server runs its own WebSocket server. The Chrome extension connects
+// to it automatically. Actions go: MCP request -> WS message -> extension -> WS response -> MCP result.
 
-let ws = null;
-let wsConnected = false;
+const wss = new WebSocketServer({ port: BRIDGE_PORT });
+let extensionSocket = null;
 let actionId = 0;
 const pendingActions = new Map();
 
-function connectBridge() {
-  ws = new WebSocket(`ws://localhost:${BRIDGE_PORT}`);
+log(`Bridge server listening on ws://localhost:${BRIDGE_PORT}`);
 
-  ws.on('open', () => {
-    wsConnected = true;
-    log('Connected to bridge server');
+wss.on('connection', (ws) => {
+  if (!extensionSocket) {
+    extensionSocket = ws;
+    log('Chrome extension connected');
+
+    ws.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+
+        // Route results back to pending MCP requests
+        if ((msg.type === 'result' || msg.type === 'tool_schema') && pendingActions.has(msg.id)) {
+          const { resolve } = pendingActions.get(msg.id);
+          pendingActions.delete(msg.id);
+          resolve(msg);
+        }
+      } catch (err) {
+        log(`Parse error: ${err.message}`);
+      }
+    });
+
+    ws.on('close', () => {
+      log('Chrome extension disconnected');
+      extensionSocket = null;
+      // Reject all pending actions
+      for (const [id, { reject }] of pendingActions) {
+        reject(new Error('Extension disconnected'));
+        pendingActions.delete(id);
+      }
+    });
+  } else {
+    log('Extra connection rejected (extension already connected)');
+    ws.close(4000, 'Extension already connected');
+  }
+});
+
+wss.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    log(`Port ${BRIDGE_PORT} already in use. Another bridge may be running. Connecting as client instead.`);
+    connectAsClient();
+  } else {
+    log(`Bridge error: ${err.message}`);
+  }
+});
+
+// Fallback: if port is taken, connect as a WS client to the existing bridge
+let fallbackWs = null;
+
+function connectAsClient() {
+  wss.close();
+  fallbackWs = new WebSocket(`ws://localhost:${BRIDGE_PORT}`);
+
+  fallbackWs.on('open', () => {
+    log('Connected to existing bridge server as client');
+    extensionSocket = { send: (msg) => fallbackWs.send(msg), readyState: WebSocket.OPEN };
   });
 
-  ws.on('message', (data) => {
+  fallbackWs.on('message', (data) => {
     try {
       const msg = JSON.parse(data.toString());
-
-      // Route results back to pending MCP requests
-      if (msg.type === 'result' && pendingActions.has(msg.id)) {
-        const { resolve } = pendingActions.get(msg.id);
-        pendingActions.delete(msg.id);
-        resolve(msg);
-      }
-
-      // Route tool schema responses
-      if (msg.type === 'tool_schema' && pendingActions.has(msg.id)) {
+      if ((msg.type === 'result' || msg.type === 'tool_schema') && pendingActions.has(msg.id)) {
         const { resolve } = pendingActions.get(msg.id);
         pendingActions.delete(msg.id);
         resolve(msg);
@@ -67,21 +110,21 @@ function connectBridge() {
     }
   });
 
-  ws.on('close', () => {
-    wsConnected = false;
-    log('Disconnected from bridge, reconnecting in 3s...');
-    setTimeout(connectBridge, 3000);
+  fallbackWs.on('close', () => {
+    log('Disconnected from bridge');
+    extensionSocket = null;
+    setTimeout(connectAsClient, 3000);
   });
 
-  ws.on('error', (err) => {
-    log(`Bridge error: ${err.message}`);
-  });
+  fallbackWs.on('error', () => {});
 }
+
+// ─── Action Sender ───────────────────────────────────────────────────────────
 
 function sendAction(action, params = {}) {
   return new Promise((resolve, reject) => {
-    if (!wsConnected || !ws) {
-      reject(new Error('Not connected to bridge server. Make sure the bridge is running and the Chrome extension is connected.'));
+    if (!extensionSocket || extensionSocket.readyState !== WebSocket.OPEN) {
+      reject(new Error('Chrome extension not connected. Make sure the extension is installed and the side panel is open.'));
       return;
     }
 
@@ -89,12 +132,12 @@ function sendAction(action, params = {}) {
     const message = { type: 'action', action, id, params };
 
     pendingActions.set(id, { resolve, reject });
-    ws.send(JSON.stringify(message));
+    extensionSocket.send(JSON.stringify(message));
 
     setTimeout(() => {
       if (pendingActions.has(id)) {
         pendingActions.delete(id);
-        reject(new Error(`Timeout waiting for ${action} result`));
+        reject(new Error(`Timeout waiting for ${action} result (30s)`));
       }
     }, 30000);
   });
@@ -180,10 +223,7 @@ const MCP_TOOLS = [
   {
     name: 'browser_get_page_info',
     description: 'Get current page metadata: URL, title, dimensions, scroll position.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
+    inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'browser_wait',
@@ -205,11 +245,7 @@ const MCP_TOOLS = [
       type: 'object',
       properties: {
         key: { type: 'string', description: 'Key name (Enter, Tab, Escape, ArrowDown, etc.)' },
-        modifiers: {
-          type: 'array',
-          items: { type: 'string', enum: ['ctrl', 'alt', 'shift', 'meta'] },
-          description: 'Modifier keys to hold',
-        },
+        modifiers: { type: 'array', items: { type: 'string', enum: ['ctrl', 'alt', 'shift', 'meta'] } },
       },
       required: ['key'],
     },
@@ -227,7 +263,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'browser_request_user',
-    description: 'Ask the user to perform an action (e.g., sign in, solve CAPTCHA). The AI pauses until the user signals they are done.',
+    description: 'Ask the user to perform an action (e.g., sign in, solve CAPTCHA). AI pauses until user signals done.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -250,10 +286,7 @@ const MCP_TOOLS = [
   {
     name: 'browser_list_tabs',
     description: 'List all open browser tabs with their IDs, URLs, and titles.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
+    inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'browser_switch_tab',
@@ -294,7 +327,6 @@ const MCP_TOOLS = [
   },
 ];
 
-// Map MCP tool names to extension action names
 const TOOL_TO_ACTION = {
   browser_screenshot: 'screenshot',
   browser_click: 'click',
@@ -321,8 +353,7 @@ function log(msg) {
 }
 
 function sendJsonRpc(obj) {
-  const json = JSON.stringify(obj);
-  process.stdout.write(json + '\n');
+  process.stdout.write(JSON.stringify(obj) + '\n');
 }
 
 function sendResult(id, result) {
@@ -340,18 +371,12 @@ async function handleRequest(request) {
     case 'initialize':
       sendResult(id, {
         protocolVersion: '2024-11-05',
-        capabilities: {
-          tools: { listChanged: false },
-        },
-        serverInfo: {
-          name: SERVER_NAME,
-          version: SERVER_VERSION,
-        },
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
       });
       break;
 
     case 'notifications/initialized':
-      // Client acknowledged initialization
       break;
 
     case 'tools/list':
@@ -361,8 +386,8 @@ async function handleRequest(request) {
     case 'tools/call': {
       const toolName = params?.name;
       const args = params?.arguments || {};
-
       const actionName = TOOL_TO_ACTION[toolName];
+
       if (!actionName) {
         sendError(id, -32602, `Unknown tool: ${toolName}`);
         return;
@@ -370,30 +395,16 @@ async function handleRequest(request) {
 
       try {
         const result = await sendAction(actionName, args);
+        const content = [];
 
         if (result.success) {
-          // Format response based on action type
-          const content = [];
-
           if (result.data?.screenshot) {
-            content.push({
-              type: 'image',
-              data: result.data.screenshot,
-              mimeType: 'image/png',
-            });
+            content.push({ type: 'image', data: result.data.screenshot, mimeType: 'image/png' });
           }
-
-          // Always include a text summary
           const summary = { ...result.data };
-          delete summary.screenshot; // Don't duplicate screenshot in text
-          if (result.pageState) {
-            summary.pageState = result.pageState;
-          }
-          content.push({
-            type: 'text',
-            text: JSON.stringify(summary, null, 2),
-          });
-
+          delete summary.screenshot;
+          if (result.pageState) summary.pageState = result.pageState;
+          content.push({ type: 'text', text: JSON.stringify(summary, null, 2) });
           sendResult(id, { content });
         } else {
           sendResult(id, {
@@ -421,7 +432,7 @@ async function handleRequest(request) {
   }
 }
 
-// ─── Stdio JSON-RPC Transport ────────────────────────────────────────────────
+// ─── Stdio Transport ─────────────────────────────────────────────────────────
 
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
 
@@ -433,9 +444,7 @@ rl.on('line', (line) => {
     const request = JSON.parse(trimmed);
     handleRequest(request).catch((err) => {
       log(`Handler error: ${err.message}`);
-      if (request.id !== undefined) {
-        sendError(request.id, -32603, err.message);
-      }
+      if (request.id !== undefined) sendError(request.id, -32603, err.message);
     });
   } catch (err) {
     log(`Parse error: ${err.message}`);
@@ -444,10 +453,13 @@ rl.on('line', (line) => {
 
 rl.on('close', () => {
   log('stdin closed, shutting down');
+  wss.close();
   process.exit(0);
 });
 
-// ─── Start ───────────────────────────────────────────────────────────────────
+// ─── Cleanup ─────────────────────────────────────────────────────────────────
 
-connectBridge();
-log(`MCP server started (bridge port: ${BRIDGE_PORT})`);
+process.on('SIGINT', () => { wss.close(); process.exit(0); });
+process.on('SIGTERM', () => { wss.close(); process.exit(0); });
+
+log(`MCP server ready. Bridge on ws://localhost:${BRIDGE_PORT}. Waiting for Chrome extension...`);
