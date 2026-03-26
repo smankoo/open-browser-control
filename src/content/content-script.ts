@@ -132,7 +132,8 @@ function removeOverlay() {
 
 // ─── Message Handling ────────────────────────────────────────────────────────
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id) return;
   switch (message.type) {
     case 'annotate_elements':
       sendResponse({ elements: annotateElements() });

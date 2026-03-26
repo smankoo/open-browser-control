@@ -24,7 +24,10 @@ const actionLog: ActionLogEntry[] = [];
 function getState(): ExtensionState {
   return {
     connected: bridge.status === 'connected',
-    sessions: Array.from(sessions.values()),
+    sessions: Array.from(sessions.values()).map(({ ownedTabIds: _, ...rest }) => ({
+      ...rest,
+      ownedTabIds: new Set<number>(),
+    })),
     actionLog,
   };
 }
@@ -81,6 +84,9 @@ async function createSession(sessionId: string, name: string): Promise<void> {
     }
   }
 
+  const ownedTabIds = new Set<number>();
+  if (tab.id) ownedTabIds.add(tab.id);
+
   const session: AgentSession = {
     id: sessionId,
     name,
@@ -89,6 +95,7 @@ async function createSession(sessionId: string, name: string): Promise<void> {
     controlMode: 'collaborative',
     pendingUserAction: null,
     pendingUserActionId: null,
+    ownedTabIds,
   };
 
   sessions.set(sessionId, session);
@@ -121,22 +128,36 @@ async function getSessionTab(session: AgentSession): Promise<number | null> {
   if (session.activeTabId) {
     try {
       const tab = await chrome.tabs.get(session.activeTabId);
-      // Tab still exists and is in the right group (or no group tracking)
-      if (session.tabGroupId === null || tab.groupId === session.tabGroupId) {
+      // Tab still exists and belongs to this session
+      const belongs = session.tabGroupId !== null
+        ? tab.groupId === session.tabGroupId
+        : session.ownedTabIds.has(session.activeTabId);
+      if (belongs) {
         return session.activeTabId;
       }
     } catch {
-      // Tab was closed
+      // Tab was closed — remove from owned set
+      session.ownedTabIds.delete(session.activeTabId);
     }
   }
 
-  // Find any tab in this session's group
+  // Find any tab in this session's group or owned set
   if (session.tabGroupId !== null) {
     const tabs = await chrome.tabs.query({});
     const groupTab = tabs.find((t) => t.groupId === session.tabGroupId);
     if (groupTab?.id) {
       session.activeTabId = groupTab.id;
       return groupTab.id;
+    }
+  } else if (session.ownedTabIds.size > 0) {
+    for (const tabId of session.ownedTabIds) {
+      try {
+        await chrome.tabs.get(tabId);
+        session.activeTabId = tabId;
+        return tabId;
+      } catch {
+        session.ownedTabIds.delete(tabId);
+      }
     }
   }
 
@@ -272,11 +293,27 @@ async function handleBridgeMessage(message: AgentMessage): Promise<void> {
 
   // Handle new_tab — add to session's tab group
   if (message.action === 'new_tab') {
-    const tab = await chrome.tabs.create({ url: message.params?.url ?? 'about:blank' });
-    if (tab.id && session.tabGroupId !== null) {
+    const requestedUrl = message.params?.url ?? 'about:blank';
+    if (requestedUrl !== 'about:blank') {
       try {
-        await chrome.tabs.group({ tabIds: [tab.id], groupId: session.tabGroupId });
-      } catch {}
+        const parsed = new URL(requestedUrl);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          bridge.send({ type: 'result', id: message.id, session: sessionId, success: false, error: 'Blocked: only http and https URLs are allowed' });
+          return;
+        }
+      } catch {
+        bridge.send({ type: 'result', id: message.id, session: sessionId, success: false, error: 'Blocked: invalid URL' });
+        return;
+      }
+    }
+    const tab = await chrome.tabs.create({ url: requestedUrl });
+    if (tab.id) {
+      session.ownedTabIds.add(tab.id);
+      if (session.tabGroupId !== null) {
+        try {
+          await chrome.tabs.group({ tabIds: [tab.id], groupId: session.tabGroupId });
+        } catch {}
+      }
     }
     session.activeTabId = tab.id ?? null;
 
@@ -298,7 +335,7 @@ async function handleBridgeMessage(message: AgentMessage): Promise<void> {
     const allTabs = await chrome.tabs.query({});
     const sessionTabs = session.tabGroupId !== null
       ? allTabs.filter((t) => t.groupId === session.tabGroupId)
-      : allTabs;
+      : allTabs.filter((t) => t.id !== undefined && session.ownedTabIds.has(t.id));
 
     bridge.send({
       type: 'result',
@@ -317,11 +354,14 @@ async function handleBridgeMessage(message: AgentMessage): Promise<void> {
     return;
   }
 
-  // Handle switch_tab — verify tab is in session's group
+  // Handle switch_tab — verify tab is in session's group or owned set
   if (message.action === 'switch_tab') {
     try {
       const tab = await chrome.tabs.get(message.params.tabId);
-      if (session.tabGroupId !== null && tab.groupId !== session.tabGroupId) {
+      const tabBelongsToSession = session.tabGroupId !== null
+        ? tab.groupId === session.tabGroupId
+        : session.ownedTabIds.has(message.params.tabId);
+      if (!tabBelongsToSession) {
         bridge.send({
           type: 'result',
           id: message.id,
@@ -431,6 +471,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   markDetached(tabId);
   for (const session of sessions.values()) {
+    session.ownedTabIds.delete(tabId);
     if (session.activeTabId === tabId) {
       session.activeTabId = null;
     }
