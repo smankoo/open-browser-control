@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kiro Browser Use</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header id="header">
+      <div class="header-title">
+        <h1>Kiro Browser</h1>
+        <span id="status-badge" class="badge disconnected">Disconnected</span>
+      </div>
+    </header>
+
+    <!-- Connection Panel -->
+    <section id="connection-panel" class="panel">
+      <div class="input-group">
+        <label for="port-input">Bridge Port</label>
+        <div class="input-row">
+          <input type="number" id="port-input" value="9334" min="1024" max="65535">
+          <button id="connect-btn" class="btn btn-primary">Connect</button>
+        </div>
+      </div>
+      <label class="checkbox-label">
+        <input type="checkbox" id="auto-connect-checkbox">
+        <span>Auto-connect on startup</span>
+      </label>
+    </section>
+
+    <!-- Control Mode -->
+    <section id="control-panel" class="panel">
+      <h2>Control</h2>
+      <div class="control-modes">
+        <button class="mode-btn active" data-mode="collaborative" title="Both user and AI can interact">
+          <span class="mode-icon">&#x1f91d;</span>
+          <span>Collaborative</span>
+        </button>
+        <button class="mode-btn" data-mode="ai" title="AI has full control">
+          <span class="mode-icon">&#x1f916;</span>
+          <span>AI Control</span>
+        </button>
+        <button class="mode-btn" data-mode="user" title="User has control, AI paused">
+          <span class="mode-icon">&#x1f464;</span>
+          <span>User Control</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- User Action Request -->
+    <section id="user-action-panel" class="panel hidden">
+      <div class="user-action-alert">
+        <h3>AI needs your help</h3>
+        <p id="user-action-message"></p>
+        <div class="input-group">
+          <textarea id="user-done-message" placeholder="Optional: describe what you did..." rows="2"></textarea>
+        </div>
+        <button id="user-done-btn" class="btn btn-primary btn-block">Done - Hand back to AI</button>
+      </div>
+    </section>
+
+    <!-- Active Tab -->
+    <section id="tab-panel" class="panel">
+      <h2>Active Tab</h2>
+      <div id="active-tab-info" class="tab-info">
+        <span class="tab-title">No tab selected</span>
+        <span class="tab-url"></span>
+      </div>
+    </section>
+
+    <!-- Action Log -->
+    <section id="log-panel" class="panel">
+      <div class="log-header">
+        <h2>Activity</h2>
+        <button id="clear-log-btn" class="btn btn-small">Clear</button>
+      </div>
+      <div id="action-log" class="action-log">
+        <div class="log-empty">No activity yet. Connect to a bridge server to start.</div>
+      </div>
+    </section>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
