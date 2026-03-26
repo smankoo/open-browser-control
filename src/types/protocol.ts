@@ -250,6 +250,12 @@ export interface SessionEndMessage {
   session: string;
 }
 
+export interface SessionUpdateMessage {
+  type: 'session_update';
+  session: string;
+  name: string;
+}
+
 // ─── Extension → Agent Events ────────────────────────────────────────────────
 
 export interface PageState {
@@ -322,7 +328,7 @@ export interface ToolDefinition {
 
 // ─── Union Types ─────────────────────────────────────────────────────────────
 
-export type AgentMessage = AgentAction | PingMessage | GetToolSchemaMessage | SessionStartMessage | SessionEndMessage;
+export type AgentMessage = AgentAction | PingMessage | GetToolSchemaMessage | SessionStartMessage | SessionEndMessage | SessionUpdateMessage;
 export type ExtensionMessage = ActionResult | ExtensionEvent | PongMessage | ToolSchemaResponse | SessionStartMessage | SessionEndMessage;
 export type AnyMessage = AgentMessage | ExtensionMessage;
 

@@ -168,6 +168,24 @@ async function handleBridgeMessage(message: AgentMessage): Promise<void> {
     return;
   }
 
+  if (message.type === 'session_update') {
+    const session = sessions.get(message.session);
+    if (session) {
+      session.name = message.name;
+      // Update the Chrome tab group title
+      if (session.tabGroupId !== null) {
+        try {
+          await chrome.tabGroups.update(session.tabGroupId, { title: message.name });
+        } catch {
+          // Tab group may have been closed
+        }
+      }
+      addLog({ source: 'system', session: message.session, action: `Session renamed to "${message.name}"`, status: 'success' });
+      broadcastState();
+    }
+    return;
+  }
+
   // Tool schema (session-scoped)
   if (message.type === 'get_tool_schema') {
     bridge.send({
