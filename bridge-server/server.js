@@ -1,29 +1,23 @@
 #!/usr/bin/env node
 
 /**
- * Bridge Server for Kiro Browser Use
+ * Bridge Server — multiplexes N agent connections to 1 Chrome extension.
  *
- * This server acts as a relay between the Chrome extension (WebSocket client)
- * and an AI agent. The agent can connect via:
- *   1. WebSocket (another client connecting to this server)
- *   2. stdin/stdout (for CLI-based agents like kiro-cli)
+ * Each agent gets a session ID. The bridge tags all messages with the
+ * session so the extension can route actions to the correct tab group.
  *
  * Usage:
- *   node server.js [--port 9334] [--mode ws|stdio]
+ *   node server.js [--port 9334]
  *
- * In "stdio" mode, the server reads JSON messages from stdin (one per line)
- * and writes JSON responses to stdout. This lets any CLI agent pipe through it.
- *
- * In "ws" mode (default), it accepts two WebSocket connections:
- *   - The Chrome extension connects first
- *   - The AI agent connects second
- *   Messages are relayed between them.
+ * Connection protocol:
+ *   1. Chrome extension connects (identified by first message being an event)
+ *   2. Agents connect and send: {"type": "session_start", "session": "...", "name": "..."}
+ *   3. Bridge relays messages, adding/preserving session tags
+ *   4. On agent disconnect, bridge sends session_end to extension
  */
 
 const { WebSocketServer, WebSocket } = require('ws');
-const readline = require('readline');
-
-// ─── Configuration ───────────────────────────────────────────────────────────
+const crypto = require('crypto');
 
 const args = process.argv.slice(2);
 function getArg(name, defaultValue) {
@@ -32,105 +26,158 @@ function getArg(name, defaultValue) {
 }
 
 const PORT = parseInt(getArg('port', '9334'), 10);
-const MODE = getArg('mode', 'ws');
+
+// ─── State ───────────────────────────────────────────────────────────────────
+
+let extensionSocket = null;
+
+// Map<sessionId, { ws, name }>
+const agentSessions = new Map();
+
+// Map<WebSocket, sessionId> — reverse lookup
+const socketToSession = new Map();
 
 // ─── WebSocket Server ────────────────────────────────────────────────────────
 
 const wss = new WebSocketServer({ port: PORT });
 
-let extensionSocket = null;
-let agentSocket = null;
+log(`Bridge server listening on ws://localhost:${PORT}`);
 
-console.error(`[KiroBridge] Starting bridge server on ws://localhost:${PORT} (mode: ${MODE})`);
+wss.on('connection', (ws) => {
+  // We don't know yet if this is the extension or an agent.
+  // We'll figure it out from the first message.
+  let identified = false;
 
-wss.on('connection', (ws, req) => {
-  const origin = req.headers.origin || 'unknown';
-  console.error(`[KiroBridge] New connection from: ${origin}`);
+  ws.on('message', (data) => {
+    let msg;
+    try {
+      msg = JSON.parse(data.toString());
+    } catch {
+      return;
+    }
 
-  // First connection is the extension, second is the agent (in ws mode)
-  if (!extensionSocket) {
-    extensionSocket = ws;
-    console.error('[KiroBridge] Extension connected');
+    // ── Identify the connection on first meaningful message ──
 
-    ws.on('message', (data) => {
-      const msg = data.toString();
-      if (MODE === 'stdio') {
-        // Forward extension messages to stdout for the agent
-        process.stdout.write(msg + '\n');
-      } else if (agentSocket && agentSocket.readyState === WebSocket.OPEN) {
-        agentSocket.send(msg);
+    if (!identified) {
+      // Extension sends {"type":"event","event":"connected"} as its first message
+      if (msg.type === 'event' && msg.event === 'connected') {
+        if (extensionSocket && extensionSocket.readyState === WebSocket.OPEN) {
+          log('Extension reconnected (replacing old connection)');
+          extensionSocket.close(4001, 'Replaced by new extension connection');
+        }
+        extensionSocket = ws;
+        identified = true;
+        log('Chrome extension connected');
+
+        // Tell extension about all existing sessions
+        for (const [sessionId, session] of agentSessions) {
+          sendToExtension({
+            type: 'session_start',
+            session: sessionId,
+            name: session.name,
+          });
+        }
+        return;
       }
-    });
 
-    ws.on('close', () => {
-      console.error('[KiroBridge] Extension disconnected');
-      extensionSocket = null;
-    });
-  } else if (MODE === 'ws' && !agentSocket) {
-    agentSocket = ws;
-    console.error('[KiroBridge] Agent connected');
+      // Agent sends {"type":"session_start","session":"...","name":"..."} as its first message
+      if (msg.type === 'session_start') {
+        const sessionId = msg.session || crypto.randomUUID().slice(0, 8);
+        const name = msg.name || 'Agent';
+        identified = true;
 
-    ws.on('message', (data) => {
-      const msg = data.toString();
-      if (extensionSocket && extensionSocket.readyState === WebSocket.OPEN) {
-        extensionSocket.send(msg);
+        agentSessions.set(sessionId, { ws, name });
+        socketToSession.set(ws, sessionId);
+        log(`Agent "${name}" connected (session: ${sessionId})`);
+
+        // Tell extension about this session
+        sendToExtension({ type: 'session_start', session: sessionId, name });
+
+        // Confirm session to agent
+        ws.send(JSON.stringify({
+          type: 'session_started',
+          session: sessionId,
+          name,
+        }));
+        return;
       }
-    });
 
-    ws.on('close', () => {
-      console.error('[KiroBridge] Agent disconnected');
-      agentSocket = null;
-    });
-  } else {
-    console.error('[KiroBridge] Extra connection rejected (max 2 in ws mode)');
-    ws.close(4000, 'Too many connections');
-  }
-});
+      // Legacy: agent that doesn't send session_start first.
+      // Auto-assign a session.
+      const sessionId = crypto.randomUUID().slice(0, 8);
+      identified = true;
+      agentSessions.set(sessionId, { ws, name: 'Agent' });
+      socketToSession.set(ws, sessionId);
+      log(`Agent connected without session_start, assigned session: ${sessionId}`);
+      sendToExtension({ type: 'session_start', session: sessionId, name: 'Agent' });
 
-// ─── Stdio Mode ──────────────────────────────────────────────────────────────
+      // Fall through to handle this first message as a regular message
+    }
 
-if (MODE === 'stdio') {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    terminal: false,
-  });
+    // ── Route messages ──
 
-  rl.on('line', (line) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-
-    // Forward agent messages from stdin to the extension
-    if (extensionSocket && extensionSocket.readyState === WebSocket.OPEN) {
-      extensionSocket.send(trimmed);
+    if (ws === extensionSocket) {
+      // Extension → route to the correct agent by session field
+      const sessionId = msg.session;
+      if (sessionId && agentSessions.has(sessionId)) {
+        const agent = agentSessions.get(sessionId);
+        if (agent.ws.readyState === WebSocket.OPEN) {
+          agent.ws.send(data.toString());
+        }
+      }
     } else {
-      console.error('[KiroBridge] Extension not connected, buffering message');
+      // Agent → tag with session and forward to extension
+      const sessionId = socketToSession.get(ws);
+      if (sessionId) {
+        msg.session = sessionId;
+        sendToExtension(msg);
+      }
     }
   });
 
-  rl.on('close', () => {
-    console.error('[KiroBridge] stdin closed, shutting down');
-    process.exit(0);
+  ws.on('close', () => {
+    if (ws === extensionSocket) {
+      log('Chrome extension disconnected');
+      extensionSocket = null;
+    } else {
+      const sessionId = socketToSession.get(ws);
+      if (sessionId) {
+        const session = agentSessions.get(sessionId);
+        log(`Agent "${session?.name}" disconnected (session: ${sessionId})`);
+        agentSessions.delete(sessionId);
+        socketToSession.delete(ws);
+        sendToExtension({ type: 'session_end', session: sessionId });
+      }
+    }
   });
-}
 
-// ─── Graceful Shutdown ───────────────────────────────────────────────────────
-
-process.on('SIGINT', () => {
-  console.error('[KiroBridge] Shutting down...');
-  wss.close();
-  process.exit(0);
+  ws.on('error', () => {});
 });
 
-process.on('SIGTERM', () => {
-  console.error('[KiroBridge] Shutting down...');
-  wss.close();
-  process.exit(0);
+function sendToExtension(msg) {
+  if (extensionSocket && extensionSocket.readyState === WebSocket.OPEN) {
+    extensionSocket.send(JSON.stringify(msg));
+  }
+}
+
+function log(msg) {
+  process.stderr.write(`[kiro-bridge] ${msg}\n`);
+}
+
+// ─── Cleanup ─────────────────────────────────────────────────────────────────
+
+wss.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    log(`Port ${PORT} already in use. Another bridge is running — that's fine.`);
+    log('MCP servers should connect to the existing bridge as clients.');
+    process.exit(0);
+  }
+  log(`Server error: ${err.message}`);
 });
 
-console.error(`[KiroBridge] Ready. Waiting for connections...`);
-console.error(`[KiroBridge] Extension should connect to ws://localhost:${PORT}`);
-if (MODE === 'ws') {
-  console.error(`[KiroBridge] Agent should also connect to ws://localhost:${PORT}`);
-} else {
-  console.error(`[KiroBridge] Agent should pipe JSON messages via stdin/stdout`);
-}
+process.on('SIGINT', () => { wss.close(); process.exit(0); });
+process.on('SIGTERM', () => { wss.close(); process.exit(0); });
+
+log('Waiting for connections...');
+
+module.exports = { PORT };

@@ -344,6 +344,44 @@ textarea {
   margin-bottom: 10px;
 }
 
+/* ─── Session Cards ───────────────────────────────────────────────────────── */
+
+.session-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  border-left: 3px solid var(--primary);
+}
+
+.session-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.session-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.session-id {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--mono);
+}
+
+.no-sessions {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  padding: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
 /* ─── Tab Info ────────────────────────────────────────────────────────────── */
 
 .tab-info {
