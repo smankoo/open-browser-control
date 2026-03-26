@@ -404,11 +404,23 @@ async function doScroll(
   return success(id, { scrolled: params.direction, amount }, pageState);
 }
 
+function isSafeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return ['http:', 'https:'].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
 async function doNavigate(
   id: string,
   tabId: number,
   params: { url: string }
 ): Promise<ActionResult> {
+  if (!isSafeUrl(params.url)) {
+    return error(id, `Blocked navigation to unsafe URL: only http and https URLs are allowed`);
+  }
   await cdp(tabId, 'Page.navigate', { url: params.url });
 
   // Wait for load event

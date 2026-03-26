@@ -26,14 +26,14 @@ const SESSION_ID = crypto.randomUUID().slice(0, 8);
 let sessionName = `MCP-${SESSION_ID}`;
 
 // Screenshots saved to disk, paths returned to agent
-const SCREENSHOT_DIR = path.join(os.tmpdir(), 'kiro-browser-use-screenshots');
-fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+const SCREENSHOT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-browser-use-screenshots-'));
+fs.chmodSync(SCREENSHOT_DIR, 0o700);
 let screenshotCounter = 0;
 
 function saveScreenshot(base64Data) {
-  const filename = `screenshot-${Date.now()}-${++screenshotCounter}.png`;
+  const filename = `screenshot-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.png`;
   const filepath = path.join(SCREENSHOT_DIR, filename);
-  fs.writeFileSync(filepath, Buffer.from(base64Data, 'base64'));
+  fs.writeFileSync(filepath, Buffer.from(base64Data, 'base64'), { mode: 0o600 });
   return filepath;
 }
 

@@ -272,7 +272,20 @@ async function handleBridgeMessage(message: AgentMessage): Promise<void> {
 
   // Handle new_tab — add to session's tab group
   if (message.action === 'new_tab') {
-    const tab = await chrome.tabs.create({ url: message.params?.url ?? 'about:blank' });
+    const requestedUrl = message.params?.url ?? 'about:blank';
+    if (requestedUrl !== 'about:blank') {
+      try {
+        const parsed = new URL(requestedUrl);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          bridge.send({ type: 'result', id: message.id, session: sessionId, success: false, error: 'Blocked: only http and https URLs are allowed' });
+          return;
+        }
+      } catch {
+        bridge.send({ type: 'result', id: message.id, session: sessionId, success: false, error: 'Blocked: invalid URL' });
+        return;
+      }
+    }
+    const tab = await chrome.tabs.create({ url: requestedUrl });
     if (tab.id && session.tabGroupId !== null) {
       try {
         await chrome.tabs.group({ tabIds: [tab.id], groupId: session.tabGroupId });
