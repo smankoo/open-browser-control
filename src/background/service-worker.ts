@@ -314,14 +314,14 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 
 // ─── Startup ─────────────────────────────────────────────────────────────────
 
-// Load saved settings
-chrome.storage.local.get(['bridgePort', 'autoConnect'], (result) => {
+// Auto-connect on startup. The extension always tries to reach the bridge.
+// If the bridge isn't running yet, the reconnect logic retries with backoff
+// until it comes up. No manual "Connect" click needed.
+chrome.storage.local.get(['bridgePort'], (result) => {
   if (result.bridgePort) {
     bridge.setPort(result.bridgePort as number);
   }
-  if (result.autoConnect) {
-    bridge.connect();
-  }
+  bridge.connect();
 });
 
 console.log('[KiroBrowserUse] Background service worker started');
