@@ -5,7 +5,7 @@
  *
  * When used as an MCP server (the primary use case), this is the command
  * that runs. It:
- *   1. Ensures the Chrome extension is installed to ~/.kiro-browser-use/extension/
+ *   1. Ensures the Chrome extension is installed to ~/kiro-browser-use-extension/
  *   2. Starts the MCP server (which embeds the WebSocket bridge)
  *
  * MCP config (Kiro CLI, Claude Desktop, etc.):
@@ -13,22 +13,22 @@
  *     "mcpServers": {
  *       "browser": {
  *         "command": "npx",
- *         "args": ["-y", "kiro-browser-use"]
+ *         "args": ["-y", "github:smankoo/kiro-browser-use"]
  *       }
  *     }
  *   }
  *
  * Standalone:
- *   npx kiro-browser-use              # MCP mode (default)
- *   npx kiro-browser-use --bridge     # standalone WebSocket bridge (no MCP)
- *   npx kiro-browser-use --extension  # print extension path and exit
+ *   npx github:smankoo/kiro-browser-use              # MCP mode (default)
+ *   npx github:smankoo/kiro-browser-use --bridge     # standalone WebSocket bridge (no MCP)
+ *   npx github:smankoo/kiro-browser-use --extension  # print extension path and exit
  */
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const EXTENSION_HOME = path.join(os.homedir(), '.kiro-browser-use', 'extension');
+const EXTENSION_HOME = path.join(os.homedir(), 'kiro-browser-use-extension');
 const args = process.argv.slice(2);
 
 // ─── Install Extension ──────────────────────────────────────────────────────
@@ -105,17 +105,17 @@ if (args.includes('--help') || args.includes('-h')) {
 kiro-browser-use — Give AI agents control of your Chrome browser.
 
 Usage:
-  npx kiro-browser-use                 Start MCP server (default)
-  npx kiro-browser-use --bridge        Start standalone WebSocket bridge
-  npx kiro-browser-use --extension     Print extension path and exit
-  npx kiro-browser-use --port 9000     Use a custom port
+  npx github:smankoo/kiro-browser-use                 Start MCP server (default)
+  npx github:smankoo/kiro-browser-use --bridge        Start standalone WebSocket bridge
+  npx github:smankoo/kiro-browser-use --extension     Print extension path and exit
+  npx github:smankoo/kiro-browser-use --port 9000     Use a custom port
 
 MCP config (add to Kiro CLI or Claude Desktop):
   {
     "mcpServers": {
       "browser": {
         "command": "npx",
-        "args": ["-y", "kiro-browser-use"]
+        "args": ["-y", "github:smankoo/kiro-browser-use"]
       }
     }
   }

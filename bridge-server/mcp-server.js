@@ -7,7 +7,7 @@
  * If no bridge is running, starts one.
  *
  * MCP config:
- *   {"command": "npx", "args": ["-y", "kiro-browser-use"]}
+ *   {"command": "npx", "args": ["-y", "github:smankoo/kiro-browser-use"]}
  */
 
 const { WebSocket } = require('ws');
