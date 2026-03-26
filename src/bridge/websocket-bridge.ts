@@ -27,6 +27,7 @@ export class WebSocketBridge {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private intentionalClose = false;
   private _status: ConnectionStatus = 'disconnected';
+  private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(callbacks: BridgeCallbacks, port?: number) {
     this.callbacks = callbacks;
@@ -68,6 +69,11 @@ export class WebSocketBridge {
         event: 'connected',
         data: { version: '0.1.0' },
       } as ExtensionMessage);
+
+      // Start keepalive to prevent MV3 service worker from sleeping.
+      // Chrome 116+ keeps the SW alive while a WebSocket is open,
+      // but we send pings as a safety net for older versions.
+      this.startKeepalive();
     };
 
     this.ws.onmessage = (event) => {
@@ -97,6 +103,7 @@ export class WebSocketBridge {
 
   disconnect(): void {
     this.intentionalClose = true;
+    this.stopKeepalive();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -118,6 +125,22 @@ export class WebSocketBridge {
 
   setPort(port: number): void {
     this.port = port;
+  }
+
+  private startKeepalive(): void {
+    this.stopKeepalive();
+    this.keepaliveTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 20000); // Every 20 seconds
+  }
+
+  private stopKeepalive(): void {
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer);
+      this.keepaliveTimer = null;
+    }
   }
 
   private scheduleReconnect(): void {
