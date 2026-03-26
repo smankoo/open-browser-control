@@ -11,6 +11,27 @@
 
 import type { AgentMessage, ExtensionMessage } from '../types/protocol';
 
+const VALID_AGENT_ACTIONS = new Set([
+  'screenshot', 'click', 'type', 'keypress', 'scroll', 'navigate', 'wait',
+  'get_dom', 'get_page_info', 'execute_js', 'select_option', 'hover',
+  'request_user', 'new_tab', 'close_tab', 'switch_tab', 'list_tabs',
+]);
+
+const VALID_INBOUND_TYPES = new Set([
+  'action', 'ping', 'session_start', 'session_end', 'session_update', 'get_tool_schema',
+]);
+
+function isValidAgentMessage(msg: unknown): msg is AgentMessage {
+  if (!msg || typeof msg !== 'object') return false;
+  const m = msg as Record<string, unknown>;
+  if (typeof m.type !== 'string' || !VALID_INBOUND_TYPES.has(m.type)) return false;
+  if (m.type === 'action') {
+    if (typeof m.id !== 'string' || !m.id) return false;
+    if (typeof m.action !== 'string' || !VALID_AGENT_ACTIONS.has(m.action)) return false;
+  }
+  return true;
+}
+
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 
 export interface BridgeCallbacks {
@@ -114,8 +135,12 @@ export class WebSocketBridge {
 
     this.ws.onmessage = (event) => {
       try {
-        const message = JSON.parse(event.data as string) as AgentMessage;
-        this.callbacks.onMessage(message);
+        const parsed = JSON.parse(event.data as string);
+        if (!isValidAgentMessage(parsed)) {
+          console.warn('[KiroBridge] Rejected invalid message:', parsed?.type);
+          return;
+        }
+        this.callbacks.onMessage(parsed);
       } catch (err) {
         console.error('[KiroBridge] Failed to parse message:', err);
       }
