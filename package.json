@@ -25,7 +25,7 @@
     "start": "node bridge-server/index.js",
     "bridge": "node bridge-server/server.js",
     "clean": "rm -rf dist extension",
-    "prepublishOnly": "npm run build"
+    "prepare": "npm run build"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.38",

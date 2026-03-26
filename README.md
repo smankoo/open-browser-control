@@ -15,7 +15,7 @@ The AI uses **your real browser** — your cookies, sessions, and logins. When i
   "mcpServers": {
     "browser": {
       "command": "npx",
-      "args": ["-y", "kiro-browser-use"]
+      "args": ["-y", "github:smankoo/kiro-browser-use"]
     }
   }
 }
@@ -25,11 +25,11 @@ The AI uses **your real browser** — your cookies, sessions, and logins. When i
 
 ### 2. Load the Chrome extension
 
-The extension is auto-installed to `~/.kiro-browser-use/extension/` on first run. Load it in Chrome:
+The extension is auto-installed to `~/kiro-browser-use-extension/` on first run. Load it in Chrome:
 
 1. Open `chrome://extensions/`
 2. Enable **Developer mode**
-3. Click **Load unpacked** → select `~/.kiro-browser-use/extension/`
+3. Click **Load unpacked** → select `~/kiro-browser-use-extension/`
 
 That's it. The extension auto-connects when your agent starts. No servers to run, no buttons to click.
 
@@ -39,7 +39,7 @@ That's it. The extension auto-connects when your agent starts. No servers to run
 
 ```
 ┌──────────────┐   MCP (stdio)   ┌──────────────────────┐   WebSocket   ┌──────────────────┐
-│  AI Agent    │◄───────────────►│  npx kiro-browser-use │◄────────────►│ Chrome Extension │
+│  AI Agent    │◄───────────────►│  npx github:smankoo/kiro-browser-use │◄────────────►│ Chrome Extension │
 │  (Kiro CLI,  │  JSON-RPC 2.0  │  (MCP + bridge)       │  auto-connect │  (side panel +   │
 │  Claude, ..) │                 │  ws://localhost:9334  │               │   CDP control)   │
 └──────────────┘                 └──────────────────────┘               └──────────────────┘
@@ -99,7 +99,7 @@ For a dedicated browsing agent:
 
 ```bash
 mkdir -p .kiro/agents
-npx kiro-browser-use --extension  # ensure extension is installed
+npx github:smankoo/kiro-browser-use --extension  # ensure extension is installed
 cp node_modules/kiro-browser-use/kiro-agent/browser-agent.json .kiro/agents/browser.json
 ```
 
@@ -114,7 +114,7 @@ kiro-cli agent browser "Find the pricing page on example.com"
 If you're not using an MCP client:
 
 ```bash
-npx kiro-browser-use --bridge    # starts WebSocket bridge only
+npx github:smankoo/kiro-browser-use --bridge    # starts WebSocket bridge only
 ```
 
 Connect your agent to `ws://localhost:9334` and send JSON messages:
@@ -130,11 +130,11 @@ Connect your agent to `ws://localhost:9334` and send JSON messages:
 ## CLI
 
 ```bash
-npx kiro-browser-use                 # Start MCP server (default)
-npx kiro-browser-use --bridge        # Standalone WebSocket bridge
-npx kiro-browser-use --extension     # Print extension install path
-npx kiro-browser-use --port 9000     # Custom port
-npx kiro-browser-use --help          # Help
+npx github:smankoo/kiro-browser-use                 # Start MCP server (default)
+npx github:smankoo/kiro-browser-use --bridge        # Standalone WebSocket bridge
+npx github:smankoo/kiro-browser-use --extension     # Print extension install path
+npx github:smankoo/kiro-browser-use --port 9000     # Custom port
+npx github:smankoo/kiro-browser-use --help          # Help
 ```
 
 ---
