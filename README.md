@@ -1,41 +1,37 @@
 # Kiro Browser Use
 
-Chrome extension that gives AI agents real browser control. Built for [Kiro CLI](https://kiro.dev), works with any MCP-compatible agent.
+Give AI agents control of your Chrome browser. Works with [Kiro CLI](https://kiro.dev), [Claude Desktop](https://claude.ai/download), and any MCP client.
 
-The AI uses **your real browser** — your cookies, sessions, and logins. When it hits something it can't handle (sign-in, CAPTCHA, MFA), it asks you to step in. You do your thing, hand back control, and the AI continues.
+The AI uses **your real browser** — your cookies, sessions, and logins. When it hits something it can't handle (sign-in, CAPTCHA, MFA), it asks you to step in, then continues where it left off.
 
----
+## Setup
 
-## Setup (one time)
-
-### 1. Build and load the extension
-
-```bash
-git clone <repo-url> && cd kiro-browser-use
-npm install && npm run build
-```
-
-Open `chrome://extensions/` → enable **Developer mode** → **Load unpacked** → select `dist/`
-
-### 2. Configure your AI agent
+### 1. Add MCP config
 
 **Kiro CLI** — add to `~/.kiro/settings/mcp.json`:
+
 ```json
 {
   "mcpServers": {
     "browser": {
-      "command": "node",
-      "args": ["/absolute/path/to/kiro-browser-use/bridge-server/mcp-server.js"]
+      "command": "npx",
+      "args": ["-y", "kiro-browser-use"]
     }
   }
 }
 ```
 
-**Claude Desktop** — same config in Claude's MCP settings.
+**Claude Desktop** — add the same to your MCP settings.
 
-**Any MCP client** — same config. The MCP server is standard JSON-RPC over stdio.
+### 2. Load the Chrome extension
 
-That's it. No servers to start. No buttons to click. The MCP server starts the bridge, the extension auto-connects.
+The extension is auto-installed to `~/.kiro-browser-use/extension/` on first run. Load it in Chrome:
+
+1. Open `chrome://extensions/`
+2. Enable **Developer mode**
+3. Click **Load unpacked** → select `~/.kiro-browser-use/extension/`
+
+That's it. The extension auto-connects when your agent starts. No servers to run, no buttons to click.
 
 ---
 
@@ -43,216 +39,115 @@ That's it. No servers to start. No buttons to click. The MCP server starts the b
 
 ```
 ┌──────────────┐   MCP (stdio)   ┌──────────────────────┐   WebSocket   ┌──────────────────┐
-│  AI Agent    │◄───────────────►│  MCP Server          │◄────────────►│ Chrome Extension │
-│  (Kiro CLI,  │  JSON-RPC 2.0  │  (embeds bridge)     │  auto-connect │  (side panel +   │
+│  AI Agent    │◄───────────────►│  npx kiro-browser-use │◄────────────►│ Chrome Extension │
+│  (Kiro CLI,  │  JSON-RPC 2.0  │  (MCP + bridge)       │  auto-connect │  (side panel +   │
 │  Claude, ..) │                 │  ws://localhost:9334  │               │   CDP control)   │
 └──────────────┘                 └──────────────────────┘               └──────────────────┘
 ```
 
-1. Your AI agent starts the MCP server (Kiro does this automatically from the config)
-2. The MCP server starts a WebSocket bridge on `localhost:9334`
-3. The Chrome extension auto-connects to the bridge (retries with backoff if not up yet)
-4. Agent sends tool calls → MCP server relays to extension → extension executes via CDP → results flow back
-
-No manual "connect" step. The extension shows a pulsing dot while waiting and turns green when connected.
-
-### Standalone use (without MCP)
-
-If you're not using an MCP client, start the bridge directly:
-
-```bash
-npm start                           # or: node bridge-server/index.js
-```
-
-Then connect your agent via WebSocket to `ws://localhost:9334`. See [Integration Examples](#integration-examples) below.
+1. Your agent starts the MCP server automatically (from the config above)
+2. MCP server starts a WebSocket bridge on `localhost:9334`
+3. Chrome extension auto-connects (polls every 2s until it finds the bridge)
+4. Agent sends tool calls → extension executes via Chrome DevTools Protocol → results flow back
 
 ---
 
 ## User/AI Handoff
 
-Three control modes, switchable in the side panel:
-
 | Mode | What happens |
 |------|-------------|
-| **Collaborative** (default) | Both user and AI can interact with the page |
+| **Collaborative** (default) | Both user and AI interact with the page |
 | **AI Control** | AI drives, user watches |
 | **User Control** | AI paused, user takes over |
 
-### Typical handoff flow
-
 ```
-AI: navigating, clicking, filling forms...
-AI: hits a login page it can't handle
-AI: calls browser_request_user("Please sign in")
-    → Extension shows notification, switches to User Control
-User: signs in manually
-User: clicks "Done - Hand back to AI" in the side panel
-    → Extension sends user_done event
-AI: resumes, now authenticated
+AI browsing → hits login page → calls browser_request_user("Please sign in")
+  → user signs in → clicks "Done" in side panel → AI continues, now authenticated
 ```
 
 ---
 
-## Browser Actions
+## Browser Tools
 
-17 high-level actions. The AI never writes raw CDP — it uses verbs like "click the Sign In button."
+17 tools available to the AI:
 
-### Interaction
-| Action | Params |
-|--------|--------|
-| `browser_click` | `selector`, `text`, `x`, `y`, `button` |
-| `browser_type` | `text`, `selector`, `clear`, `pressEnter` |
-| `browser_keypress` | `key`, `modifiers` |
-| `browser_scroll` | `direction`, `amount`, `selector` |
-| `browser_hover` | `selector`, `text`, `x`, `y` |
-| `browser_select_option` | `selector`, `value`, `text` |
-
-### Observation
-| Action | Params |
-|--------|--------|
-| `browser_screenshot` | `fullPage`, `selector` |
-| `browser_get_dom` | `simplified`, `selector` |
-| `browser_get_page_info` | — |
-| `browser_execute_js` | `expression` |
-
-### Navigation
-| Action | Params |
-|--------|--------|
-| `browser_navigate` | `url` |
-| `browser_wait` | `selector`, `text`, `ms`, `timeout` |
-| `browser_new_tab` | `url` |
-| `browser_close_tab` | — |
-| `browser_switch_tab` | `tabId` |
-| `browser_list_tabs` | — |
-
-### Collaboration
-| Action | Params |
-|--------|--------|
-| `browser_request_user` | `message`, `timeout` |
+| Tool | What it does |
+|------|-------------|
+| `browser_screenshot` | Capture page as PNG (saves to temp file, returns path) |
+| `browser_click` | Click by selector, text, or coordinates |
+| `browser_type` | Type text, optionally clear first or press Enter |
+| `browser_navigate` | Go to a URL |
+| `browser_scroll` | Scroll up/down/left/right |
+| `browser_get_dom` | Get interactive elements with positions and text |
+| `browser_get_page_info` | URL, title, dimensions, scroll position |
+| `browser_wait` | Wait for element, text, or fixed time |
+| `browser_keypress` | Press any key with modifiers |
+| `browser_execute_js` | Run JavaScript in page context |
+| `browser_hover` | Hover over an element |
+| `browser_select_option` | Pick from a dropdown |
+| `browser_request_user` | Ask user to take over (sign in, CAPTCHA, etc.) |
+| `browser_new_tab` | Open a new tab |
+| `browser_close_tab` | Close current tab |
+| `browser_switch_tab` | Switch to a tab by ID |
+| `browser_list_tabs` | List all open tabs |
 
 ---
 
 ## Kiro Custom Agent
 
-For a dedicated browsing agent, drop the config into your workspace:
+For a dedicated browsing agent:
 
 ```bash
 mkdir -p .kiro/agents
-cp kiro-agent/browser-agent.json .kiro/agents/browser.json
+npx kiro-browser-use --extension  # ensure extension is installed
+cp node_modules/kiro-browser-use/kiro-agent/browser-agent.json .kiro/agents/browser.json
 ```
 
-Then:
 ```bash
 kiro-cli agent browser "Find the pricing page on example.com"
 ```
 
-The agent config includes a system prompt that teaches the AI the plan→act→observe→adjust loop and when to call `browser_request_user`.
-
 ---
 
-## Integration Examples
+## Standalone Use (no MCP)
 
-### Python (WebSocket)
-
-```python
-import asyncio, websockets, json
-
-async def browse():
-    async with websockets.connect("ws://localhost:9334") as ws:
-        # Screenshot
-        await ws.send(json.dumps({"type": "action", "action": "screenshot", "id": "1"}))
-        result = json.loads(await ws.recv())
-
-        # Click by text
-        await ws.send(json.dumps({
-            "type": "action", "action": "click", "id": "2",
-            "params": {"text": "Sign In"}
-        }))
-        result = json.loads(await ws.recv())
-
-        # Hand off to user
-        await ws.send(json.dumps({
-            "type": "action", "action": "request_user", "id": "3",
-            "params": {"message": "Please sign in"}
-        }))
-        result = json.loads(await ws.recv())  # blocks until user clicks Done
-
-asyncio.run(browse())
-```
-
-### Node.js
+If you're not using an MCP client:
 
 ```bash
-node bridge-server/example-agent.js
+npx kiro-browser-use --bridge    # starts WebSocket bridge only
 ```
 
-### stdin/stdout (pipe JSON lines)
+Connect your agent to `ws://localhost:9334` and send JSON messages:
+
+```json
+{"type": "action", "action": "screenshot", "id": "1"}
+{"type": "action", "action": "click", "id": "2", "params": {"text": "Sign In"}}
+{"type": "action", "action": "navigate", "id": "3", "params": {"url": "https://example.com"}}
+```
+
+---
+
+## CLI
 
 ```bash
-node bridge-server/kiro-adapter.js --port 9334
-# Then type:
-{"tool": "screenshot"}
-{"tool": "navigate", "params": {"url": "https://example.com"}}
+npx kiro-browser-use                 # Start MCP server (default)
+npx kiro-browser-use --bridge        # Standalone WebSocket bridge
+npx kiro-browser-use --extension     # Print extension install path
+npx kiro-browser-use --port 9000     # Custom port
+npx kiro-browser-use --help          # Help
 ```
 
 ---
-
-## Protocol
-
-JSON messages over WebSocket. Every action has a unique `id`.
-
-**Request:**
-```json
-{"type": "action", "action": "click", "id": "1", "params": {"text": "Submit"}}
-```
-
-**Response:**
-```json
-{"type": "result", "id": "1", "success": true, "data": {"clicked": {"x": 450, "y": 320}}, "pageState": {"url": "...", "title": "...", "tabId": 123}}
-```
-
-**Events (no request needed):**
-```json
-{"type": "event", "event": "page_navigated", "data": {"url": "...", "title": "..."}}
-{"type": "event", "event": "user_done", "data": {"message": "Signed in"}}
-```
-
-**Tool discovery:**
-```json
-{"type": "get_tool_schema", "id": "s1"}
-```
-
----
-
-## Project Structure
-
-```
-kiro-browser-use/
-├── src/                              # Chrome extension (TypeScript)
-│   ├── manifest.json                 # Manifest V3
-│   ├── background/service-worker.ts  # Auto-connect, action routing, state
-│   ├── actions/browser-actions.ts    # 17 CDP actions + tool schema
-│   ├── bridge/websocket-bridge.ts    # WS client, reconnect, keepalive
-│   ├── content/content-script.ts     # DOM annotation, element finding
-│   ├── sidepanel/                    # Control panel UI
-│   └── types/protocol.ts            # TypeScript protocol types
-├── bridge-server/
-│   ├── mcp-server.js                 # MCP server + embedded bridge (one process)
-│   ├── server.js                     # Standalone WS bridge (for non-MCP use)
-│   ├── index.js                      # CLI entry point
-│   ├── example-agent.js              # Demo agent
-│   └── kiro-adapter.js               # stdin/stdout adapter
-├── kiro-agent/
-│   └── browser-agent.json            # Drop-in Kiro agent config
-└── dist/                             # Built extension → load in Chrome
-```
 
 ## Development
 
 ```bash
-npm run dev      # Watch mode
-npm run build    # Production build
-npm start        # Start bridge server
+git clone https://github.com/smankoo/kiro-browser-use
+cd kiro-browser-use
+npm install
+npm run build    # builds extension to dist/ and packages to extension/
+npm run dev      # watch mode
+npm start        # run MCP server locally
 ```
 
 ## Requirements
