@@ -86,7 +86,7 @@ function annotateElements(): AnnotatedElement[] {
 function showOverlay() {
   removeOverlay();
   overlayContainer = document.createElement('div');
-  overlayContainer.id = 'kiro-browser-use-overlay';
+  overlayContainer.id = 'obc-overlay';
   overlayContainer.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:999999;';
 
   annotations.forEach((ann) => {

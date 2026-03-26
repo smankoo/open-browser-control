@@ -1,5 +1,5 @@
 /**
- * Background service worker for the Kiro Browser Use extension.
+ * Background service worker for the Open Browser Control extension.
  *
  * Manages multiple agent sessions, each with its own Chrome tab group.
  * Actions from agent A only affect tabs in agent A's tab group.
@@ -574,4 +574,4 @@ chrome.storage.local.get(['bridgePort'], (result) => {
   bridge.connect();
 });
 
-console.log('[KiroBrowserUse] Background service worker started');
+console.log('[OpenBrowserControl] Background service worker started');

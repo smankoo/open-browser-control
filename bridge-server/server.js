@@ -199,7 +199,7 @@ function sendToExtension(msg) {
 }
 
 function log(msg) {
-  process.stderr.write(`[kiro-bridge] ${msg}\n`);
+  process.stderr.write(`[obc-bridge] ${msg}\n`);
 }
 
 // ─── Cleanup ─────────────────────────────────────────────────────────────────

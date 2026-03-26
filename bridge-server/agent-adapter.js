@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 /**
- * Kiro CLI Adapter
+ * Agent Adapter
  *
- * This adapter translates between the kiro-browser-use protocol
+ * This adapter translates between the open-browser-control protocol
  * and a generic AI agent's tool-calling interface.
  *
  * It connects to the bridge server and exposes a simple interface
@@ -11,11 +11,8 @@
  *   - Stdin/stdout (JSON lines)
  *   - Imported as a module
  *
- * For kiro-cli integration, this serves as a "browser tool provider"
- * that kiro can call when it needs to interact with a web page.
- *
  * Usage as MCP-like tool provider (stdin/stdout):
- *   node kiro-adapter.js --port 9334
+ *   node agent-adapter.js --port 9334
  *
  *   # Then send tool calls as JSON lines:
  *   {"tool": "screenshot"}
@@ -87,7 +84,7 @@ async function callTool(tool, params = {}) {
     return { success: false, error: 'Not connected to bridge server' };
   }
 
-  const id = `kiro-${++messageId}`;
+  const id = `obc-${++messageId}`;
   const message = { type: 'action', action: tool, id, params };
 
   return new Promise((resolve) => {
@@ -116,7 +113,7 @@ rl.on('line', async (line) => {
 
     // Handle special commands
     if (request.tool === 'list_tools' || request.type === 'get_tool_schema') {
-      const id = `kiro-${++messageId}`;
+      const id = `obc-${++messageId}`;
       ws.send(JSON.stringify({ type: 'get_tool_schema', id }));
       return;
     }
