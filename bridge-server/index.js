@@ -13,15 +13,15 @@
  *     "mcpServers": {
  *       "browser": {
  *         "command": "npx",
- *         "args": ["-y", "github:smankoo/open-browser-control"]
+ *         "args": ["-y", "open-browser-control"]
  *       }
  *     }
  *   }
  *
  * Standalone:
- *   npx github:smankoo/open-browser-control              # MCP mode (default)
- *   npx github:smankoo/open-browser-control --bridge     # standalone WebSocket bridge (no MCP)
- *   npx github:smankoo/open-browser-control --extension  # print extension path and exit
+ *   npx open-browser-control              # MCP mode (default)
+ *   npx open-browser-control --bridge     # standalone WebSocket bridge (no MCP)
+ *   npx open-browser-control --extension  # print extension path and exit
  */
 
 const fs = require('fs');
@@ -105,17 +105,17 @@ if (args.includes('--help') || args.includes('-h')) {
 open-browser-control — Give AI agents control of your Chrome browser.
 
 Usage:
-  npx github:smankoo/open-browser-control                 Start MCP server (default)
-  npx github:smankoo/open-browser-control --bridge        Start standalone WebSocket bridge
-  npx github:smankoo/open-browser-control --extension     Print extension path and exit
-  npx github:smankoo/open-browser-control --port 9000     Use a custom port
+  npx open-browser-control                 Start MCP server (default)
+  npx open-browser-control --bridge        Start standalone WebSocket bridge
+  npx open-browser-control --extension     Print extension path and exit
+  npx open-browser-control --port 9000     Use a custom port
 
 MCP config (add to your MCP client):
   {
     "mcpServers": {
       "browser": {
         "command": "npx",
-        "args": ["-y", "github:smankoo/open-browser-control"]
+        "args": ["-y", "open-browser-control"]
       }
     }
   }

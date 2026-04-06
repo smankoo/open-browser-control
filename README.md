@@ -1,46 +1,52 @@
 # Open Browser Control
 
-Give AI agents control of your Chrome browser. Works with [Claude Desktop](https://claude.ai/download), [Kiro CLI](https://kiro.dev), and any MCP client.
+Give AI agents control of your Chrome browser. Works with [Claude Code](https://claude.ai/claude-code), [Claude Desktop](https://claude.ai/download), [Cursor](https://cursor.com), and any MCP client.
 
 The AI uses **your real browser** — your cookies, sessions, and logins. When it hits something it can't handle (sign-in, CAPTCHA, MFA), it asks you to step in, then continues where it left off.
 
-## Setup
+## Quick Start
 
-### 1. Add MCP config
+### Step 1: Add MCP config
 
-Add to your MCP client's config (Claude Desktop, Cursor, etc.):
+Add to your MCP client's config:
 
+**Claude Code** — run:
+```bash
+claude mcp add browser -- npx -y open-browser-control
+```
+
+**Claude Desktop / Cursor / other MCP clients** — add to config file:
 ```json
 {
   "mcpServers": {
     "browser": {
       "command": "npx",
-      "args": ["-y", "github:smankoo/open-browser-control"]
+      "args": ["-y", "open-browser-control"]
     }
   }
 }
 ```
 
-### 2. Load the Chrome extension
+### Step 2: Load the Chrome extension
 
 The extension is auto-installed to `~/open-browser-control-extension/` on first run. Load it in Chrome:
 
 1. Open `chrome://extensions/`
-2. Enable **Developer mode**
-3. Click **Load unpacked** → select `~/open-browser-control-extension/`
+2. Enable **Developer mode** (toggle in top right)
+3. Click **Load unpacked**
+4. Select the folder: `~/open-browser-control-extension/`
 
-That's it. The extension auto-connects when your agent starts. No servers to run, no buttons to click.
+Done. The extension auto-connects when your agent starts. No servers to run, no buttons to click.
 
 ---
 
 ## How It Works
 
 ```
-┌──────────────┐   MCP (stdio)   ┌───────────────────────────────────────┐   WebSocket   ┌──────────────────┐
-│  AI Agent    │◄───────────────►│  npx github:smankoo/open-browser-control │◄──────────►│ Chrome Extension │
-│  (Claude,    │  JSON-RPC 2.0  │  (MCP + bridge)                        │  auto-connect │  (side panel +   │
-│  Cursor, ..) │                 │  ws://localhost:9334                   │               │   CDP control)   │
-└──────────────┘                 └───────────────────────────────────────┘               └──────────────────┘
+AI Agent          MCP Server              Chrome Extension
+(Claude,     ◄──► (npx open-browser-  ◄──► (side panel +
+ Cursor, ..)      control)                  CDP control)
+              stdio    ws://localhost:9334    auto-connect
 ```
 
 1. Your agent starts the MCP server automatically (from the config above)
@@ -67,27 +73,28 @@ AI browsing → hits login page → calls browser_request_user("Please sign in")
 
 ## Browser Tools
 
-17 tools available to the AI:
+19 tools available to the AI:
 
 | Tool | What it does |
 |------|-------------|
-| `browser_screenshot` | Capture page as PNG (saves to temp file, returns path) |
+| `browser_navigate` | Go to a URL |
+| `browser_get_dom` | Get interactive elements with positions and text (primary way to read pages) |
+| `browser_get_page_info` | URL, title, dimensions, scroll position |
+| `browser_execute_js` | Run JavaScript in page context |
 | `browser_click` | Click by selector, text, or coordinates |
 | `browser_type` | Type text, optionally clear first or press Enter |
-| `browser_navigate` | Go to a URL |
 | `browser_scroll` | Scroll up/down/left/right |
-| `browser_get_dom` | Get interactive elements with positions and text |
-| `browser_get_page_info` | URL, title, dimensions, scroll position |
-| `browser_wait` | Wait for element, text, or fixed time |
 | `browser_keypress` | Press any key with modifiers |
-| `browser_execute_js` | Run JavaScript in page context |
 | `browser_hover` | Hover over an element |
 | `browser_select_option` | Pick from a dropdown |
+| `browser_wait` | Wait for element, text, or fixed time |
+| `browser_screenshot` | Capture page as PNG (use sparingly — DOM tools are faster) |
 | `browser_request_user` | Ask user to take over (sign in, CAPTCHA, etc.) |
-| `browser_new_tab` | Open a new tab |
-| `browser_close_tab` | Close current tab |
+| `browser_new_tab_group` | Create a named tab group for a task |
+| `browser_new_tab` | Open a new tab in the current group |
 | `browser_switch_tab` | Switch to a tab by ID |
-| `browser_list_tabs` | List all open tabs |
+| `browser_list_tabs` | List all open tabs in this session |
+| `browser_set_session_name` | Set the session name (shown on tab group) |
 
 ---
 
@@ -96,15 +103,15 @@ AI browsing → hits login page → calls browser_request_user("Please sign in")
 If you're not using an MCP client:
 
 ```bash
-npx github:smankoo/open-browser-control --bridge    # starts WebSocket bridge only
+npx -y open-browser-control --bridge    # starts WebSocket bridge only
 ```
 
 Connect your agent to `ws://localhost:9334` and send JSON messages:
 
 ```json
-{"type": "action", "action": "screenshot", "id": "1"}
+{"type": "action", "action": "navigate", "id": "1", "params": {"url": "https://example.com"}}
 {"type": "action", "action": "click", "id": "2", "params": {"text": "Sign In"}}
-{"type": "action", "action": "navigate", "id": "3", "params": {"url": "https://example.com"}}
+{"type": "action", "action": "get_dom", "id": "3"}
 ```
 
 ---
@@ -112,11 +119,11 @@ Connect your agent to `ws://localhost:9334` and send JSON messages:
 ## CLI
 
 ```bash
-npx github:smankoo/open-browser-control                 # Start MCP server (default)
-npx github:smankoo/open-browser-control --bridge        # Standalone WebSocket bridge
-npx github:smankoo/open-browser-control --extension     # Print extension install path
-npx github:smankoo/open-browser-control --port 9000     # Custom port
-npx github:smankoo/open-browser-control --help          # Help
+npx -y open-browser-control                 # Start MCP server (default)
+npx -y open-browser-control --bridge        # Standalone WebSocket bridge
+npx -y open-browser-control --extension     # Print extension install path
+npx -y open-browser-control --port 9000     # Custom port
+npx -y open-browser-control --help          # Help
 ```
 
 ---
