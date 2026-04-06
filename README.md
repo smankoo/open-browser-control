@@ -92,6 +92,7 @@ AI browsing → hits login page → calls browser_request_user("Please sign in")
 | `browser_request_user` | Ask user to take over (sign in, CAPTCHA, etc.) |
 | `browser_new_tab_group` | Create a named tab group for a task |
 | `browser_new_tab` | Open a new tab in the current group |
+| `browser_close_tab` | Close a tab |
 | `browser_switch_tab` | Switch to a tab by ID |
 | `browser_list_tabs` | List all open tabs in this session |
 | `browser_set_session_name` | Set the session name (shown on tab group) |
