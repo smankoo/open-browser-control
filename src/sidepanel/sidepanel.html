@@ -5,28 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Open Browser Control</title>
   <link rel="stylesheet" href="sidepanel.css">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css">
 </head>
 <body>
   <div id="app">
     <!-- Header -->
     <header id="header">
-      <div class="header-title">
-        <h1>Open Browser Control</h1>
-        <span id="status-badge" class="badge disconnected">Waiting for agent...</span>
+      <div class="header-row">
+        <div class="header-brand">
+          <i class="ph ph-globe-simple"></i>
+          <span class="header-name">OBC</span>
+        </div>
+        <span id="status-badge" class="badge disconnected">offline</span>
       </div>
     </header>
 
     <!-- Connection Status -->
     <section id="connection-panel" class="panel">
       <div id="connection-status" class="connection-status">
-        <span class="status-dot disconnected"></span>
+        <div class="status-indicator">
+          <span class="status-dot disconnected"></span>
+        </div>
         <div class="status-text">
           <span id="status-message">Waiting for agent on port <strong id="port-display">9334</strong></span>
-          <span id="status-hint" class="hint">Auto-connects when an agent starts.</span>
+          <span id="status-hint" class="hint">Auto-connects when an agent starts</span>
         </div>
       </div>
       <details class="settings-details">
-        <summary>Settings</summary>
+        <summary><i class="ph ph-gear-six"></i> Settings</summary>
         <div class="settings-content">
           <div class="input-group">
             <label for="port-input">Bridge Port</label>
@@ -35,7 +42,7 @@
               <button id="save-port-btn" class="btn btn-small">Save</button>
             </div>
           </div>
-          <button id="reconnect-btn" class="btn btn-small">Reconnect Now</button>
+          <button id="reconnect-btn" class="btn btn-small btn-full"><i class="ph ph-arrow-clockwise"></i> Reconnect</button>
         </div>
       </details>
     </section>
@@ -46,11 +53,14 @@
     <!-- Action Log -->
     <section id="log-panel" class="panel">
       <div class="log-header">
-        <h2>Activity</h2>
-        <button id="clear-log-btn" class="btn btn-small">Clear</button>
+        <h2><i class="ph ph-list-dashes"></i> Activity</h2>
+        <button id="clear-log-btn" class="btn btn-small btn-ghost">Clear</button>
       </div>
       <div id="action-log" class="action-log">
-        <div class="log-empty">Waiting for agent to connect...</div>
+        <div class="log-empty">
+          <i class="ph ph-plugs"></i>
+          <span>Waiting for agent</span>
+        </div>
       </div>
     </section>
   </div>

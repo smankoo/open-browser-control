@@ -54,7 +54,7 @@ reconnectBtn.addEventListener('click', async () => {
 });
 
 clearLogBtn.addEventListener('click', () => {
-  actionLog.innerHTML = '<div class="log-empty">Log cleared.</div>';
+  actionLog.innerHTML = '<div class="log-empty"><i class="ph ph-check"></i><span>Log cleared</span></div>';
 });
 
 // Delegate clicks on session controls
@@ -93,7 +93,7 @@ function render(): void {
   // Connection status
   if (currentState.connected) {
     const count = currentState.sessions.length;
-    statusBadge.textContent = count > 0 ? `${count} agent${count > 1 ? 's' : ''}` : 'Connected';
+    statusBadge.textContent = count > 0 ? `${count} agent${count > 1 ? 's' : ''}` : 'online';
     statusBadge.className = 'badge connected';
     statusDot.className = 'status-dot connected';
     statusMessage.textContent = count > 0
@@ -101,11 +101,11 @@ function render(): void {
       : 'Bridge connected, waiting for agents';
     statusHint.textContent = '';
   } else {
-    statusBadge.textContent = 'Waiting for agent...';
+    statusBadge.textContent = 'offline';
     statusBadge.className = 'badge disconnected';
     statusDot.className = 'status-dot disconnected';
     statusMessage.innerHTML = `Waiting for agent on port <strong>${portDisplay.textContent}</strong>`;
-    statusHint.textContent = 'Auto-connects when an agent starts.';
+    statusHint.textContent = 'Auto-connects when an agent starts';
   }
 
   // Sessions
@@ -118,7 +118,7 @@ function render(): void {
 function renderSessions(sessions: AgentSession[]): void {
   if (sessions.length === 0) {
     if (currentState?.connected) {
-      sessionsContainer.innerHTML = '<div class="no-sessions">Bridge connected. Waiting for agent sessions...</div>';
+      sessionsContainer.innerHTML = '<div class="no-sessions">Waiting for agent sessions...</div>';
     } else {
       sessionsContainer.innerHTML = '';
     }
@@ -128,10 +128,12 @@ function renderSessions(sessions: AgentSession[]): void {
   sessionsContainer.innerHTML = sessions.map((session) => {
     const userActionHtml = session.pendingUserAction ? `
       <div class="user-action-alert">
-        <h3>AI needs your help</h3>
+        <h3><i class="ph ph-hand-pointing"></i> Action needed</h3>
         <p>${escapeHtml(session.pendingUserAction)}</p>
-        <textarea data-session="${session.id}" placeholder="Optional: describe what you did..." rows="2"></textarea>
-        <button class="btn btn-primary btn-block user-done-btn" data-session="${session.id}">Done - Hand back to AI</button>
+        <textarea data-session="${session.id}" placeholder="Describe what you did (optional)" rows="2"></textarea>
+        <button class="btn btn-primary btn-block user-done-btn" data-session="${session.id}">
+          <i class="ph ph-arrow-u-up-left"></i> Hand back to AI
+        </button>
       </div>
     ` : '';
 
@@ -144,15 +146,15 @@ function renderSessions(sessions: AgentSession[]): void {
         <div class="control-modes">
           <button class="mode-btn ${session.controlMode === 'collaborative' ? 'active' : ''}"
                   data-session="${session.id}" data-mode="collaborative" title="Both user and AI">
-            <span class="mode-icon">&#x1f91d;</span><span>Collab</span>
+            <i class="ph-bold ph-handshake"></i><span>Collab</span>
           </button>
           <button class="mode-btn ${session.controlMode === 'ai' ? 'active' : ''}"
                   data-session="${session.id}" data-mode="ai" title="AI has full control">
-            <span class="mode-icon">&#x1f916;</span><span>AI</span>
+            <i class="ph-bold ph-robot"></i><span>AI</span>
           </button>
           <button class="mode-btn ${session.controlMode === 'user' ? 'active' : ''}"
                   data-session="${session.id}" data-mode="user" title="User has control">
-            <span class="mode-icon">&#x1f464;</span><span>User</span>
+            <i class="ph-bold ph-user"></i><span>User</span>
           </button>
         </div>
         ${userActionHtml}
@@ -163,7 +165,7 @@ function renderSessions(sessions: AgentSession[]): void {
 
 function renderLog(entries: ActionLogEntry[]): void {
   if (entries.length === 0) {
-    actionLog.innerHTML = '<div class="log-empty">Waiting for agent to connect...</div>';
+    actionLog.innerHTML = '<div class="log-empty"><i class="ph ph-plugs"></i><span>Waiting for agent</span></div>';
     return;
   }
 
