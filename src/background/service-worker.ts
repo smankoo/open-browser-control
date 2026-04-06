@@ -56,6 +56,7 @@ const bridge = new WebSocketBridge({
         cleanupSession(sessionId, session);
       }
       sessions.clear();
+      chrome.storage.local.remove('obc_sessions').catch(() => {});
       addLog({ source: 'system', action: 'Disconnected from bridge', status: 'pending' });
     }
     broadcastState();
@@ -67,31 +68,39 @@ const bridge = new WebSocketBridge({
 async function createSession(sessionId: string, name: string): Promise<void> {
   if (sessions.has(sessionId)) return;
 
-  // Create a tab group for this session
-  const tab = await chrome.tabs.create({ url: 'about:blank', active: false });
+  // Try to reclaim an existing tab group from a previous service worker lifecycle
   let tabGroupId: number | null = null;
+  let activeTabId: number | null = null;
+  const ownedTabIds = new Set<number>();
 
-  if (tab.id) {
-    try {
-      tabGroupId = await chrome.tabs.group({ tabIds: [tab.id] });
-      await chrome.tabGroups.update(tabGroupId, {
-        title: name,
-        color: pickColor(sessions.size),
-        collapsed: false,
-      });
-    } catch {
-      // Tab groups may not be supported
+  try {
+    const stored = await chrome.storage.local.get(['obc_sessions']);
+    const sessionMap = stored.obc_sessions as Record<string, { tabGroupId: number | null }> | undefined;
+    const savedGroupId = sessionMap?.[sessionId]?.tabGroupId;
+    if (savedGroupId != null) {
+      // Check if this tab group still exists
+      const allTabs = await chrome.tabs.query({});
+      const groupTabs = allTabs.filter((t) => t.groupId === savedGroupId);
+      if (groupTabs.length > 0) {
+        tabGroupId = savedGroupId;
+        activeTabId = groupTabs[0].id ?? null;
+        for (const t of groupTabs) {
+          if (t.id) ownedTabIds.add(t.id);
+        }
+      }
     }
+  } catch {
+    // Storage read failed — no reclaim
   }
 
-  const ownedTabIds = new Set<number>();
-  if (tab.id) ownedTabIds.add(tab.id);
+  // Don't create any tabs or groups here — wait until an action actually needs one.
+  // Tabs are created on demand by getSessionTab, new_tab, new_tab_group, or navigate.
 
   const session: AgentSession = {
     id: sessionId,
     name,
     tabGroupId,
-    activeTabId: tab.id ?? null,
+    activeTabId,
     controlMode: 'collaborative',
     pendingUserAction: null,
     pendingUserActionId: null,
@@ -99,7 +108,17 @@ async function createSession(sessionId: string, name: string): Promise<void> {
   };
 
   sessions.set(sessionId, session);
+  persistSessions();
   addLog({ source: 'system', session: sessionId, action: `Agent "${name}" connected`, status: 'success' });
+}
+
+/** Persist session→tabGroup mapping so we can reclaim groups after service worker restart */
+function persistSessions(): void {
+  const data: Record<string, { tabGroupId: number | null }> = {};
+  for (const [id, session] of sessions) {
+    data[id] = { tabGroupId: session.tabGroupId };
+  }
+  chrome.storage.local.set({ obc_sessions: data }).catch(() => {});
 }
 
 function cleanupSession(sessionId: string, session: AgentSession): void {
@@ -159,6 +178,30 @@ async function getSessionTab(session: AgentSession): Promise<number | null> {
         session.ownedTabIds.delete(tabId);
       }
     }
+  }
+
+  // No tab exists — create one on demand
+  const tab = await chrome.tabs.create({ url: 'about:blank', active: false });
+  if (tab.id) {
+    session.ownedTabIds.add(tab.id);
+    if (session.tabGroupId !== null) {
+      try {
+        await chrome.tabs.group({ tabIds: [tab.id], groupId: session.tabGroupId });
+      } catch {}
+    } else {
+      // No group yet — create one with the session name
+      try {
+        session.tabGroupId = await chrome.tabs.group({ tabIds: [tab.id] });
+        await chrome.tabGroups.update(session.tabGroupId, {
+          title: session.name,
+          color: pickColor(sessions.size),
+          collapsed: false,
+        });
+        persistSessions();
+      } catch {}
+    }
+    session.activeTabId = tab.id;
+    return tab.id;
   }
 
   return null;
@@ -319,6 +362,7 @@ async function handleBridgeMessage(message: AgentMessage): Promise<void> {
           collapsed: false,
         });
         session.tabGroupId = newGroupId;
+        persistSessions();
       } catch (err) {
         console.error('[OBC] Failed to create tab group:', err);
       }
