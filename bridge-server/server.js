@@ -32,7 +32,7 @@ const PORT = parseInt(getArg('port', '9334'), 10);
 const VALID_AGENT_ACTIONS = new Set([
   'screenshot', 'click', 'type', 'keypress', 'scroll', 'navigate', 'wait',
   'get_dom', 'get_page_info', 'execute_js', 'select_option', 'hover',
-  'request_user', 'new_tab', 'close_tab', 'switch_tab', 'list_tabs',
+  'request_user', 'new_tab', 'new_tab_group', 'close_tab', 'switch_tab', 'list_tabs',
 ]);
 
 const VALID_MESSAGE_TYPES = new Set([

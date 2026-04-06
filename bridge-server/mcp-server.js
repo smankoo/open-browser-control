@@ -41,6 +41,8 @@ function saveScreenshot(base64Data) {
 
 let ws = null;
 let wsReady = false;
+let wsConnected = false;   // WebSocket is open but session not yet started
+let sessionStarted = false; // session_start has been sent to the bridge
 let actionId = 0;
 const pendingActions = new Map();
 
@@ -48,12 +50,9 @@ function connectToBridge() {
   ws = new WebSocket(`ws://localhost:${BRIDGE_PORT}`);
 
   ws.on('open', () => {
-    // Register our session with the bridge
-    ws.send(JSON.stringify({
-      type: 'session_start',
-      session: SESSION_ID,
-      name: sessionName,
-    }));
+    wsConnected = true;
+    // Don't send session_start yet — wait until a tool call actually needs the browser.
+    // This avoids opening a tab group immediately when the MCP server starts.
   });
 
   ws.on('message', (data) => {
@@ -63,6 +62,7 @@ function connectToBridge() {
       // Bridge confirms our session
       if (msg.type === 'session_started') {
         wsReady = true;
+        sessionStarted = true;
         log(`Session registered: ${msg.session} ("${msg.name}")`);
         return;
       }
@@ -80,6 +80,8 @@ function connectToBridge() {
 
   ws.on('close', () => {
     wsReady = false;
+    wsConnected = false;
+    sessionStarted = false;
     log('Disconnected from bridge, reconnecting in 2s...');
     // Reject pending actions
     for (const [id, { reject }] of pendingActions) {
@@ -92,7 +94,46 @@ function connectToBridge() {
   ws.on('error', () => {});
 }
 
+function ensureSession() {
+  return new Promise((resolve, reject) => {
+    if (sessionStarted && wsReady) {
+      resolve();
+      return;
+    }
+    if (!wsConnected || !ws || ws.readyState !== WebSocket.OPEN) {
+      reject(new Error(
+        'Chrome extension not connected. Make sure:\n' +
+        '1. The extension is installed in Chrome\n' +
+        '2. Chrome is running'
+      ));
+      return;
+    }
+    // Send session_start now (first time a tool needs the browser)
+    ws.send(JSON.stringify({
+      type: 'session_start',
+      session: SESSION_ID,
+      name: sessionName,
+    }));
+    // Wait for session_started confirmation
+    const check = setInterval(() => {
+      if (sessionStarted && wsReady) {
+        clearInterval(check);
+        clearTimeout(timeout);
+        resolve();
+      }
+    }, 50);
+    const timeout = setTimeout(() => {
+      clearInterval(check);
+      reject(new Error('Timeout waiting for session to start'));
+    }, 10000);
+  });
+}
+
 function updateSessionName(name) {
+  if (!sessionStarted) {
+    // Session hasn't started yet — the name will be used when session_start is sent
+    return;
+  }
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({
       type: 'session_update',
@@ -102,16 +143,9 @@ function updateSessionName(name) {
   }
 }
 
-function sendAction(action, params = {}) {
+async function sendAction(action, params = {}) {
+  await ensureSession();
   return new Promise((resolve, reject) => {
-    if (!wsReady || !ws || ws.readyState !== WebSocket.OPEN) {
-      reject(new Error(
-        'Chrome extension not connected. Make sure:\n' +
-        '1. The extension is installed in Chrome\n' +
-        '2. Chrome is running'
-      ));
-      return;
-    }
 
     const id = `${SESSION_ID}-${++actionId}`;
     const message = { type: 'action', action, id, session: SESSION_ID, params };
@@ -340,6 +374,18 @@ const MCP_TOOLS = [
     },
   },
   {
+    name: 'browser_new_tab_group',
+    description: 'Create a new named tab group for a task. Use this to organize browsing by task — each group gets a label visible in Chrome. The new group becomes the active group; new tabs and navigations happen inside it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Short task name for the tab group (e.g. "Search flights", "Debug login")' },
+        url: { type: 'string', description: 'URL to open in the first tab (default: about:blank)' },
+      },
+      required: ['name'],
+    },
+  },
+  {
     name: 'browser_set_session_name',
     description: 'Set a descriptive name for this browser session. The name appears on the Chrome tab group so the user can identify what task this session is working on. Call this early with a short task summary (e.g. "Search flights to Paris", "Debug login page").',
     inputSchema: {
@@ -365,6 +411,7 @@ const TOOL_TO_ACTION = {
   browser_execute_js: 'execute_js',
   browser_request_user: 'request_user',
   browser_new_tab: 'new_tab',
+  browser_new_tab_group: 'new_tab_group',
   browser_list_tabs: 'list_tabs',
   browser_switch_tab: 'switch_tab',
   browser_hover: 'hover',
