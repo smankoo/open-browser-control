@@ -1,6 +1,6 @@
 # Open Browser Control
 
-Give AI agents control of your Chrome browser. Works with [Claude Code](https://claude.ai/claude-code), [Claude Desktop](https://claude.ai/download), [Cursor](https://cursor.com), and any MCP client.
+Give AI agents control of your Chrome browser. Works with [Kiro](https://kiro.dev), [Claude Code](https://claude.ai/claude-code), [Claude Desktop](https://claude.ai/download), [Cursor](https://cursor.com), and any MCP client.
 
 The AI uses **your real browser** — your cookies, sessions, and logins. When it hits something it can't handle (sign-in, CAPTCHA, MFA), it asks you to step in, then continues where it left off.
 
@@ -10,12 +10,7 @@ The AI uses **your real browser** — your cookies, sessions, and logins. When i
 
 Add to your MCP client's config:
 
-**Claude Code** — run:
-```bash
-claude mcp add browser -- npx -y open-browser-control
-```
-
-**Claude Desktop / Cursor / other MCP clients** — add to config file:
+**Kiro** — add to `.kiro/settings/mcp.json` (workspace) or `~/.kiro/settings/mcp.json` (global):
 ```json
 {
   "mcpServers": {
@@ -26,6 +21,30 @@ claude mcp add browser -- npx -y open-browser-control
   }
 }
 ```
+
+<details>
+<summary><strong>Claude Code</strong></summary>
+
+```bash
+claude mcp add browser -- npx -y open-browser-control
+```
+</details>
+
+<details>
+<summary><strong>Claude Desktop / Cursor / other MCP clients</strong></summary>
+
+Add to your MCP config file:
+```json
+{
+  "mcpServers": {
+    "browser": {
+      "command": "npx",
+      "args": ["-y", "open-browser-control"]
+    }
+  }
+}
+```
+</details>
 
 ### Step 2: Load the Chrome extension
 
@@ -44,8 +63,8 @@ Done. The extension auto-connects when your agent starts. No servers to run, no 
 
 ```
 AI Agent          MCP Server              Chrome Extension
-(Claude,     ◄──► (npx open-browser-  ◄──► (side panel +
- Cursor, ..)      control)                  CDP control)
+(Kiro,       ◄──► (npx open-browser-  ◄──► (side panel +
+ Claude, ..)      control)                  CDP control)
               stdio    ws://localhost:9334    auto-connect
 ```
 
