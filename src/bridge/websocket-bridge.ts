@@ -14,7 +14,7 @@ import type { AgentMessage, ExtensionMessage } from '../types/protocol';
 const VALID_AGENT_ACTIONS = new Set([
   'screenshot', 'click', 'type', 'keypress', 'scroll', 'navigate', 'wait',
   'get_dom', 'get_page_info', 'execute_js', 'select_option', 'hover',
-  'request_user', 'new_tab', 'close_tab', 'switch_tab', 'list_tabs',
+  'request_user', 'new_tab', 'new_tab_group', 'close_tab', 'switch_tab', 'list_tabs',
 ]);
 
 const VALID_INBOUND_TYPES = new Set([
@@ -35,7 +35,7 @@ function isValidAgentMessage(msg: unknown): msg is AgentMessage {
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 
 export interface BridgeCallbacks {
-  onMessage: (message: AgentMessage) => void;
+  onMessage: (message: AgentMessage) => void | Promise<void>;
   onStatusChange: (status: ConnectionStatus) => void;
 }
 
@@ -53,6 +53,7 @@ export class WebSocketBridge {
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
   private intentionalClose = false;
   private _status: ConnectionStatus = 'disconnected';
+  private messageQueue: Promise<void> = Promise.resolve();
 
   constructor(callbacks: BridgeCallbacks, port?: number) {
     this.callbacks = callbacks;
@@ -140,7 +141,12 @@ export class WebSocketBridge {
           console.warn('[OBCBridge] Rejected invalid message:', parsed?.type);
           return;
         }
-        this.callbacks.onMessage(parsed);
+        // Process messages serially so async handlers (e.g. createSession)
+        // finish before the next message is handled.
+        this.messageQueue = this.messageQueue.then(
+          () => this.callbacks.onMessage(parsed),
+          () => this.callbacks.onMessage(parsed),
+        );
       } catch (err) {
         console.error('[OBCBridge] Failed to parse message:', err);
       }

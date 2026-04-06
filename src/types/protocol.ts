@@ -173,6 +173,17 @@ export interface NewTabAction {
   };
 }
 
+export interface NewTabGroupAction {
+  type: 'action';
+  action: 'new_tab_group';
+  id: string;
+  session: string;
+  params: {
+    name: string;
+    url?: string;
+  };
+}
+
 export interface CloseTabAction {
   type: 'action';
   action: 'close_tab';
@@ -212,6 +223,7 @@ export type AgentAction =
   | HoverAction
   | RequestUserAction
   | NewTabAction
+  | NewTabGroupAction
   | CloseTabAction
   | SwitchTabAction
   | ListTabsAction;

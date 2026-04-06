@@ -291,6 +291,53 @@ async function handleBridgeMessage(message: AgentMessage): Promise<void> {
     return;
   }
 
+  // Handle new_tab_group — create a new named tab group for this session
+  if (message.action === 'new_tab_group') {
+    const groupName = message.params?.name || 'Task';
+    const requestedUrl = message.params?.url ?? 'about:blank';
+    if (requestedUrl !== 'about:blank') {
+      try {
+        const parsed = new URL(requestedUrl);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          bridge.send({ type: 'result', id: message.id, session: sessionId, success: false, error: 'Blocked: only http and https URLs are allowed' });
+          return;
+        }
+      } catch {
+        bridge.send({ type: 'result', id: message.id, session: sessionId, success: false, error: 'Blocked: invalid URL' });
+        return;
+      }
+    }
+
+    const tab = await chrome.tabs.create({ url: requestedUrl, active: false });
+    if (tab.id) {
+      session.ownedTabIds.add(tab.id);
+      try {
+        const newGroupId = await chrome.tabs.group({ tabIds: [tab.id] });
+        await chrome.tabGroups.update(newGroupId, {
+          title: groupName,
+          color: pickColor(sessions.size + (session.tabGroupId ?? 0)),
+          collapsed: false,
+        });
+        session.tabGroupId = newGroupId;
+      } catch (err) {
+        console.error('[OBC] Failed to create tab group:', err);
+      }
+    }
+    session.activeTabId = tab.id ?? null;
+
+    addLog({ source: 'ai', session: sessionId, action: 'new_tab_group', details: groupName, status: 'success' });
+
+    bridge.send({
+      type: 'result',
+      id: message.id,
+      session: sessionId,
+      success: true,
+      data: { tabId: tab.id, groupName, url: tab.url ?? '' },
+    } as ExtensionMessage);
+    broadcastState();
+    return;
+  }
+
   // Handle new_tab — add to session's tab group
   if (message.action === 'new_tab') {
     const requestedUrl = message.params?.url ?? 'about:blank';

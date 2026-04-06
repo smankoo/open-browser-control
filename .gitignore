@@ -4,3 +4,4 @@ extension/
 *.map
 .DS_Store
 .env
+.mcp.json

@@ -7,6 +7,7 @@
     "debugger",
     "activeTab",
     "tabs",
+    "tabGroups",
     "scripting",
     "sidePanel",
     "storage",
