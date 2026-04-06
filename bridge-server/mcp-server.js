@@ -7,7 +7,7 @@
  * If no bridge is running, starts one.
  *
  * MCP config:
- *   {"command": "npx", "args": ["-y", "github:smankoo/open-browser-control"]}
+ *   {"command": "npx", "args": ["-y", "open-browser-control"]}
  */
 
 const { WebSocket } = require('ws');
@@ -201,7 +201,7 @@ async function ensureBridge() {
 const MCP_TOOLS = [
   {
     name: 'browser_screenshot',
-    description: 'Take a screenshot of the current browser page. Returns the file path to a saved PNG image.',
+    description: 'Take a screenshot of the current browser page. Returns the file path to a saved PNG image. Screenshots are slow and heavy — prefer browser_get_dom and browser_get_page_info to understand page content and structure. Use screenshots only when you need to verify visual layout, debug rendering issues, or when DOM inspection is insufficient (e.g. canvas, images, charts).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -264,7 +264,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'browser_get_dom',
-    description: 'Get the page DOM structure. Returns interactive elements with their text, roles, and positions.',
+    description: 'Get the page DOM structure. Returns interactive elements with their text, roles, and positions. This is the primary way to understand what is on the page — use it to find elements to click, read text content, and understand page layout. Faster and more detailed than screenshots.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -275,7 +275,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'browser_get_page_info',
-    description: 'Get current page metadata: URL, title, dimensions, scroll position.',
+    description: 'Get current page metadata: URL, title, dimensions, scroll position. Use this to quickly check where you are and whether navigation succeeded — much faster than a screenshot.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -305,7 +305,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'browser_execute_js',
-    description: 'Execute JavaScript in the page context and return the result.',
+    description: 'Execute JavaScript in the page context and return the result. Useful for extracting specific data, reading computed styles, or interacting with page APIs — often more precise than screenshots for getting exact values.',
     inputSchema: {
       type: 'object',
       properties: {
