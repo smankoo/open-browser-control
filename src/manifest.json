@@ -1,14 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Open Browser Control",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Connect AI agents to Chrome for collaborative browsing. Supports user/AI handoff for seamless automation.",
   "permissions": [
     "debugger",
-    "activeTab",
     "tabs",
     "tabGroups",
-    "scripting",
     "sidePanel",
     "storage",
     "notifications"
