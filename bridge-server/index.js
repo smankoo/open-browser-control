@@ -3,10 +3,10 @@
 /**
  * Open Browser Control — entry point.
  *
- * When used as an MCP server (the primary use case), this is the command
- * that runs. It:
- *   1. Ensures the Chrome extension is installed to ~/open-browser-control-extension/
- *   2. Starts the MCP server (which embeds the WebSocket bridge)
+ * When used as an MCP server (the primary use case), this starts the MCP
+ * server (which embeds the WebSocket bridge). The Chrome extension is
+ * installed separately from the Chrome Web Store; pass --extension to
+ * unpack the bundled copy for manual load-unpacked installs.
  *
  * MCP config (Claude Desktop, etc.):
  *   {
@@ -126,8 +126,6 @@ Extension location: ${EXTENSION_HOME}
 }
 
 // ─── Start ───────────────────────────────────────────────────────────────────
-
-installExtension();
 
 if (args.includes('--bridge')) {
   require('./server.js');
