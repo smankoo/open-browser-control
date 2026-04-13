@@ -46,7 +46,16 @@ Add to your MCP config file:
 ```
 </details>
 
-### Step 2: Load the Chrome extension
+### Step 2: Install the Chrome extension
+
+Install from the Chrome Web Store:
+
+**[Open Browser Control on the Chrome Web Store](https://chromewebstore.google.com/detail/open-browser-control/icicfjcgocaakibmmaejmoipckofnnpl)**
+
+Done. The extension auto-connects when your agent starts. No servers to run, no buttons to click.
+
+<details>
+<summary><strong>Prefer to load unpacked?</strong></summary>
 
 The extension is auto-installed to `~/open-browser-control-extension/` on first run. Load it in Chrome:
 
@@ -54,8 +63,7 @@ The extension is auto-installed to `~/open-browser-control-extension/` on first 
 2. Enable **Developer mode** (toggle in top right)
 3. Click **Load unpacked**
 4. Select the folder: `~/open-browser-control-extension/`
-
-Done. The extension auto-connects when your agent starts. No servers to run, no buttons to click.
+</details>
 
 ---
 
