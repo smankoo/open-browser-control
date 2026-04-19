@@ -9,7 +9,8 @@
     "tabGroups",
     "sidePanel",
     "storage",
-    "notifications"
+    "notifications",
+    "alarms"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {
