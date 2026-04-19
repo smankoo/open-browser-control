@@ -50,12 +50,18 @@ const DEFAULT_PORT = 9334;
 // This means worst case the agent waits <2s after starting its server.
 const POLL_INTERVAL = 2000;
 
-// MV3 service workers suspend after ~30s idle, which kills setInterval. We
-// ride chrome.alarms as a backup so the worker wakes up to retry even after
-// suspension. Minimum period is 30s, so worst-case reconnect is ~30s when
-// the worker was already asleep before the bridge came up.
-const POLL_ALARM_NAME = 'obc-bridge-poll';
-const POLL_ALARM_PERIOD_MINUTES = 0.5;
+// MV3 backgrounds (Chrome SW, Firefox event page) idle-stop after ~30s,
+// which kills setInterval. We ride chrome.alarms as a backup.
+//
+// Firefox MV3 has a hard 1-minute minimum for alarm periods — a single
+// 1-min alarm fires too late to prevent the very first idle-stop, which
+// means the bg keeps flapping. The documented workaround is three alarms
+// staggered 20s apart (see Mozilla Discourse #128327): together they
+// produce an alarm event every 20s, well under Firefox's idle threshold,
+// which resets the idle timer and keeps the bg alive between reconnects.
+const POLL_ALARM_NAMES = ['obc-bridge-poll-0', 'obc-bridge-poll-1', 'obc-bridge-poll-2'];
+const POLL_ALARM_PERIOD_MINUTES = 1;
+const POLL_ALARM_STAGGER_MS = 20_000;
 
 // Bridge rejects us because another extension (different instanceId) owns
 // this port. Retrying won't help — the user must change the port or stop
@@ -85,7 +91,7 @@ export class WebSocketBridge {
     // re-registers the listener in time to receive any already-queued alarms.
     if (typeof chrome !== 'undefined' && chrome.alarms?.onAlarm) {
       chrome.alarms.onAlarm.addListener((alarm) => {
-        if (alarm.name === POLL_ALARM_NAME) this.tryConnect();
+        if (POLL_ALARM_NAMES.includes(alarm.name)) this.tryConnect();
       });
     }
   }
@@ -112,6 +118,13 @@ export class WebSocketBridge {
     this.intentionalClose = true;
     this.stopPolling();
     this.stopKeepalive();
+    // Explicit disconnect clears the alarms too — caller is opting out of
+    // auto-reconnect entirely (e.g. user pressed a "disconnect" button).
+    if (typeof chrome !== 'undefined' && chrome.alarms) {
+      for (const name of POLL_ALARM_NAMES) {
+        chrome.alarms.clear(name).catch(() => {});
+      }
+    }
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -213,8 +226,17 @@ export class WebSocketBridge {
           clearInterval(this.pollTimer);
           this.pollTimer = null;
         }
+        // Keep the staggered alarms running — we want to wake and re-check
+        // whenever the other browser lets go. The fast 2s setInterval stays
+        // off to avoid spamming rejections.
         if (typeof chrome !== 'undefined' && chrome.alarms) {
-          chrome.alarms.create(POLL_ALARM_NAME, { periodInMinutes: POLL_ALARM_PERIOD_MINUTES });
+          chrome.alarms.create(POLL_ALARM_NAMES[0], { periodInMinutes: POLL_ALARM_PERIOD_MINUTES });
+          setTimeout(() => {
+            try { chrome.alarms.create(POLL_ALARM_NAMES[1], { periodInMinutes: POLL_ALARM_PERIOD_MINUTES }); } catch {}
+          }, POLL_ALARM_STAGGER_MS);
+          setTimeout(() => {
+            try { chrome.alarms.create(POLL_ALARM_NAMES[2], { periodInMinutes: POLL_ALARM_PERIOD_MINUTES }); } catch {}
+          }, POLL_ALARM_STAGGER_MS * 2);
         }
         const reason =
           this.pendingRejectionReason ||
@@ -236,10 +258,20 @@ export class WebSocketBridge {
   }
 
   private startPolling(): void {
-    // Alarm and setInterval are independent — register the alarm even if the
-    // timer's already running so SW restarts keep the alarm scheduled.
+    // Schedule three alarms staggered 20s apart. Each has the minimum
+    // 1-minute period Firefox MV3 allows, but because they're offset they
+    // collectively fire every 20s — frequent enough to reset Firefox's
+    // idle timer and also serve as a reconnect poke after the bg dies.
+    // Overwrites any existing alarms with the same names on re-invocation
+    // (e.g. after the bg wakes from suspension).
     if (typeof chrome !== 'undefined' && chrome.alarms) {
-      chrome.alarms.create(POLL_ALARM_NAME, { periodInMinutes: POLL_ALARM_PERIOD_MINUTES });
+      chrome.alarms.create(POLL_ALARM_NAMES[0], { periodInMinutes: POLL_ALARM_PERIOD_MINUTES });
+      setTimeout(() => {
+        try { chrome.alarms.create(POLL_ALARM_NAMES[1], { periodInMinutes: POLL_ALARM_PERIOD_MINUTES }); } catch {}
+      }, POLL_ALARM_STAGGER_MS);
+      setTimeout(() => {
+        try { chrome.alarms.create(POLL_ALARM_NAMES[2], { periodInMinutes: POLL_ALARM_PERIOD_MINUTES }); } catch {}
+      }, POLL_ALARM_STAGGER_MS * 2);
     }
     if (this.pollTimer) return;
     this.pollTimer = setInterval(() => {
@@ -248,12 +280,12 @@ export class WebSocketBridge {
   }
 
   private stopPolling(): void {
+    // Only stop the setInterval here — leave the alarm running so the bg
+    // can be woken back up if the process dies while we're "connected".
+    // The alarm is torn down explicitly in disconnect().
     if (this.pollTimer) {
       clearInterval(this.pollTimer);
       this.pollTimer = null;
-    }
-    if (typeof chrome !== 'undefined' && chrome.alarms) {
-      chrome.alarms.clear(POLL_ALARM_NAME).catch(() => {});
     }
   }
 
