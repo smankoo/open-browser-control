@@ -28,6 +28,23 @@ function sendToBackground(type: string, data?: Record<string, unknown>): Promise
   return chrome.runtime.sendMessage({ source: 'sidepanel', type, ...data });
 }
 
+// Keep the background alive by cycling a port every 20s. See the matching
+// content-script code for the reasoning — Firefox MV3 event pages can
+// idle-stop even with a quietly-open port, so we rebuild to generate
+// steady chrome.runtime.onConnect activity on the bg side.
+const KEEPALIVE_REBUILD_MS = 20_000;
+
+function openKeepalivePort(): void {
+  const port = chrome.runtime.connect({ name: 'sidepanel-keepalive' });
+  port.onDisconnect.addListener(() => {
+    setTimeout(openKeepalivePort, 1000);
+  });
+  setTimeout(() => {
+    try { port.disconnect(); } catch {}
+  }, KEEPALIVE_REBUILD_MS);
+}
+openKeepalivePort();
+
 chrome.runtime.onMessage.addListener((message) => {
   if (message.source === 'background' && message.type === 'state_update') {
     currentState = message.data as ExtensionState;
@@ -100,6 +117,12 @@ function render(): void {
       ? `${count} agent session${count > 1 ? 's' : ''} active`
       : 'Bridge connected, waiting for agents';
     statusHint.textContent = '';
+  } else if (currentState.conflictReason) {
+    statusBadge.textContent = 'conflict';
+    statusBadge.className = 'badge disconnected';
+    statusDot.className = 'status-dot disconnected';
+    statusMessage.textContent = currentState.conflictReason;
+    statusHint.textContent = 'Close the other browser, or disable its Open Browser Control extension, to use this one.';
   } else {
     statusBadge.textContent = 'offline';
     statusBadge.className = 'badge disconnected';

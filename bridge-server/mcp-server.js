@@ -102,9 +102,9 @@ function ensureSession() {
     }
     if (!wsConnected || !ws || ws.readyState !== WebSocket.OPEN) {
       reject(new Error(
-        'Chrome extension not connected. Make sure:\n' +
-        '1. The extension is installed in Chrome\n' +
-        '2. Chrome is running'
+        'Browser extension not connected. Make sure:\n' +
+        '1. The Open Browser Control extension is installed in Chrome or Firefox\n' +
+        '2. The browser is running'
       ));
       return;
     }
@@ -201,12 +201,23 @@ async function ensureBridge() {
 const MCP_TOOLS = [
   {
     name: 'browser_screenshot',
-    description: 'Take a screenshot of the current browser page. Returns the file path to a saved PNG image. Screenshots are slow and heavy — prefer browser_get_dom and browser_get_page_info to understand page content and structure. Use screenshots only when you need to verify visual layout, debug rendering issues, or when DOM inspection is insufficient (e.g. canvas, images, charts).',
+    description: 'Take a screenshot of the current browser page. Returns the file path to a saved PNG image. Screenshots are slow and heavy — prefer browser_get_dom and browser_get_page_info to understand page content and structure. Use screenshots only when you need to verify visual layout, debug rendering issues, or when DOM inspection is insufficient (e.g. canvas, images, charts). The response includes a `pageRect` describing which page-coordinate region the image depicts. To zoom into fine detail (especially after a full-page shot), call again with `rect:{x,y,width,height}` narrowed to a sub-region of that pageRect — coordinates are page CSS pixels.',
     inputSchema: {
       type: 'object',
       properties: {
         fullPage: { type: 'boolean', description: 'Capture full scrollable page instead of just viewport' },
         selector: { type: 'string', description: 'CSS selector to screenshot a specific element' },
+        rect: {
+          type: 'object',
+          description: 'Page-coordinate rectangle to capture at full CSS resolution. Use this to zoom into a region returned in a prior screenshot\'s pageRect.',
+          properties: {
+            x: { type: 'number', description: 'Left edge in page CSS pixels' },
+            y: { type: 'number', description: 'Top edge in page CSS pixels' },
+            width: { type: 'number', description: 'Width in page CSS pixels' },
+            height: { type: 'number', description: 'Height in page CSS pixels' },
+          },
+          required: ['x', 'y', 'width', 'height'],
+        },
       },
     },
   },

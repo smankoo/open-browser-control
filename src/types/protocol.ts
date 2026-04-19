@@ -21,6 +21,8 @@ export interface ScreenshotAction {
   params?: {
     fullPage?: boolean;
     selector?: string;
+    /** Page-coordinate rectangle to capture (zoom into a region returned in a prior pageRect). */
+    rect?: { x: number; y: number; width: number; height: number };
   };
 }
 
@@ -300,7 +302,15 @@ export interface PageNavigatedEvent {
 export interface ConnectionEvent {
   type: 'event';
   event: 'connected' | 'disconnected';
-  data: { version: string };
+  data: {
+    version: string;
+    /** Which browser this extension runs in. The bridge uses this in rejection messages. */
+    browser: 'chrome' | 'firefox';
+    /** Stable per-install UUID. The bridge treats a new connection with the same
+     *  instanceId as a reconnect (replaces the old socket) and a connection with
+     *  a different instanceId as a conflict (rejects with close code 4002). */
+    instanceId: string;
+  };
 }
 
 export type ExtensionEvent =
@@ -374,6 +384,10 @@ export interface ExtensionState {
   connected: boolean;
   sessions: AgentSession[];
   actionLog: ActionLogEntry[];
+  /** Populated when the bridge rejected us because another browser is
+   *  already connected. The side panel shows this with guidance to close
+   *  the other browser. */
+  conflictReason?: string | null;
 }
 
 export interface ActionLogEntry {

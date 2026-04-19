@@ -190,3 +190,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Let background know we're loaded
 chrome.runtime.sendMessage({ source: 'content', type: 'content_loaded', url: location.href }).catch(() => {});
+
+// Keep the background alive. In Firefox MV3 the event page idle-stops
+// every ~30s unless *something* keeps it busy. Content scripts from every
+// open tab rebuild a port every 20s — Chrome disconnects ports after 5
+// minutes of inactivity, and Firefox's event page has been observed to
+// stop even with a quietly-open port, so we cycle the port rather than
+// hold one forever. Pair this with the sidepanel keepalive for redundancy.
+const KEEPALIVE_REBUILD_MS = 20_000;
+
+function openKeepalivePort(): void {
+  let port: chrome.runtime.Port | null = null;
+  try {
+    port = chrome.runtime.connect({ name: 'content-keepalive' });
+  } catch {
+    return; // Extension context invalidated (e.g. extension disabled).
+  }
+  port.onDisconnect.addListener(() => {
+    // Background restarted or we're being unloaded. Try to reconnect soon —
+    // if the page is going away, the runtime will refuse and this no-ops.
+    setTimeout(openKeepalivePort, 1000);
+  });
+  // Rebuild the port periodically so inactivity timers on either side
+  // don't tear it down while we're trying to stay alive.
+  setTimeout(() => {
+    try { port?.disconnect(); } catch {}
+  }, KEEPALIVE_REBUILD_MS);
+}
+openKeepalivePort();
