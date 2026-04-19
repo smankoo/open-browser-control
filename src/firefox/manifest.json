@@ -1,0 +1,59 @@
+{
+  "manifest_version": 3,
+  "name": "Open Browser Control",
+  "version": "0.1.2",
+  "description": "Connect AI agents to Firefox for collaborative browsing. Supports user/AI handoff for seamless automation.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "openbrowsercontrol@gmail.com",
+      "strict_min_version": "128.0"
+    }
+  },
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "scripting",
+    "webNavigation",
+    "storage",
+    "notifications",
+    "alarms"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "scripts": ["background.js"],
+    "type": "module"
+  },
+  "sidebar_action": {
+    "default_panel": "sidepanel.html",
+    "default_title": "Open Browser Control",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "open_at_install": false
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Open Browser Control",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

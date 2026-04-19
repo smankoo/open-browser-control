@@ -1,15 +1,17 @@
 {
   "name": "open-browser-control",
   "version": "0.1.2",
-  "description": "Give AI agents control of your Chrome browser. Works with any MCP client.",
+  "description": "Give AI agents control of your browser (Chrome or Firefox). Works with any MCP client.",
   "keywords": [
     "mcp",
     "browser",
     "chrome",
+    "firefox",
     "ai",
     "agent",
     "automation",
     "chrome-extension",
+    "firefox-extension",
     "open-browser-control"
   ],
   "license": "MIT",
@@ -23,12 +25,13 @@
   "files": [
     "bridge-server/",
     "extension/",
+    "extension-firefox/",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "build": "webpack --mode production && npm run package-extension",
-    "package-extension": "rm -rf extension && cp -r dist extension",
+    "package-extension": "rm -rf extension extension-firefox && cp -r dist/chrome extension && cp -r dist/firefox extension-firefox",
     "dev": "webpack --mode development --watch",
     "start": "node bridge-server/index.js",
     "bridge": "node bridge-server/server.js",
