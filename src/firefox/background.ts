@@ -513,6 +513,10 @@ async function handleBridgeMessage(message: AgentMessage): Promise<void> {
       ? allTabs.filter((t) => t.groupId === session.tabGroupId)
       : allTabs.filter((t) => t.id !== undefined && session.ownedTabIds.has(t.id));
 
+    // `active` here means "the tab this session is currently acting on",
+    // not the browser window's focused tab. Firefox's t.active is false
+    // for every tab in a non-focused tab group, which is useless for an
+    // agent asking "where am I?".
     bridge.send({
       type: 'result',
       id: message.id,
@@ -523,7 +527,7 @@ async function handleBridgeMessage(message: AgentMessage): Promise<void> {
           id: t.id,
           url: t.url,
           title: t.title,
-          active: t.active,
+          active: t.id === session.activeTabId,
         })),
       },
     } as ExtensionMessage);
@@ -660,6 +664,18 @@ function broadcastState(): void {
     data: getState(),
   }).catch(() => {});
 }
+
+// Holding a port open keeps the event page (Firefox) or service worker
+// (Chrome) alive. The side panel and every open tab's content script
+// both open these on load — the union covers the realistic cases (either
+// the user is watching the sidebar, or they have at least one web page
+// open). No message exchange needed; the open connection itself is the
+// keepalive.
+const KEEPALIVE_PORTS = new Set(['sidepanel-keepalive', 'content-keepalive']);
+chrome.runtime.onConnect.addListener((port) => {
+  if (!KEEPALIVE_PORTS.has(port.name)) return;
+  port.onDisconnect.addListener(() => {});
+});
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.source === 'content') return true;

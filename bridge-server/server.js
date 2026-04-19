@@ -65,6 +65,43 @@ const agentSessions = new Map();
 // Map<WebSocket, sessionId> — reverse lookup
 const socketToSession = new Map();
 
+// Actions and get_tool_schema requests buffered while the extension is
+// disconnected. MV3 backgrounds (especially Firefox event pages) can
+// idle-stop even with keepalive ports open; when they do, alarms wake
+// them back up within ~30s. Holding requests here during that gap turns
+// a hard failure into a brief latency blip.
+//
+// Each entry: { msg, agentWs, deadline (ms epoch) }
+const pendingForExtension = [];
+const PENDING_TIMEOUT_MS = 25_000; // leave margin under the agent's 30s timeout
+
+function flushPendingToExtension() {
+  while (pendingForExtension.length) {
+    const { msg } = pendingForExtension.shift();
+    sendToExtension(msg);
+  }
+}
+
+function reapExpiredPending() {
+  if (!pendingForExtension.length) return;
+  const now = Date.now();
+  for (let i = pendingForExtension.length - 1; i >= 0; i--) {
+    const p = pendingForExtension[i];
+    if (p.deadline > now) continue;
+    pendingForExtension.splice(i, 1);
+    if (p.agentWs.readyState === WebSocket.OPEN && p.msg.id) {
+      p.agentWs.send(JSON.stringify({
+        type: 'result',
+        id: p.msg.id,
+        session: p.msg.session,
+        success: false,
+        error: 'Browser extension did not come back in time. The browser may be closed or the extension disabled.',
+      }));
+    }
+  }
+}
+setInterval(reapExpiredPending, 1000);
+
 // ─── WebSocket Server ────────────────────────────────────────────────────────
 
 const wss = new WebSocketServer({ port: PORT });
@@ -139,6 +176,9 @@ wss.on('connection', (ws) => {
             name: session.name,
           });
         }
+
+        // Drain anything that arrived while the extension was asleep.
+        flushPendingToExtension();
         return;
       }
 
@@ -200,17 +240,12 @@ wss.on('connection', (ws) => {
           }
         }
         msg.session = sessionId;
-        // If no extension is connected, short-circuit actions/get_tool_schema
-        // with an error result instead of letting the agent wait for a timeout.
+        // Extension offline? Hold the request briefly instead of failing.
+        // The extension's alarm-based reconnect fires within ~30s; flushing
+        // on reconnect turns a bg-stop into a small latency bump.
         if (!extensionSocket || extensionSocket.readyState !== WebSocket.OPEN) {
-          if (msg.type === 'action' && typeof msg.id === 'string') {
-            ws.send(JSON.stringify({
-              type: 'result',
-              id: msg.id,
-              session: sessionId,
-              success: false,
-              error: 'Browser extension is not connected. Open the browser with the Open Browser Control extension installed, or reload the extension.',
-            }));
+          if ((msg.type === 'action' || msg.type === 'get_tool_schema') && typeof msg.id === 'string') {
+            pendingForExtension.push({ msg, agentWs: ws, deadline: Date.now() + PENDING_TIMEOUT_MS });
             return;
           }
         }
