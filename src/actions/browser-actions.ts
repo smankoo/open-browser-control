@@ -11,6 +11,7 @@ import type {
   ActionError,
   PageState,
 } from '../types/protocol';
+import { isSafeUrl } from '../utils/url-utils';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -136,16 +137,24 @@ export async function executeAction(action: AgentAction, tabId: number): Promise
 async function doScreenshot(
   id: string,
   tabId: number,
-  params?: { fullPage?: boolean; selector?: string }
+  params?: {
+    fullPage?: boolean;
+    selector?: string;
+    rect?: { x: number; y: number; width: number; height: number };
+  }
 ): Promise<ActionResult> {
   if (params?.selector) {
-    // Get element bounds and clip to that
     const result = await cdp(tabId, 'Runtime.evaluate', {
       expression: `(() => {
         const el = document.querySelector(${JSON.stringify(params.selector)});
         if (!el) return null;
         const r = el.getBoundingClientRect();
-        return { x: r.x, y: r.y, width: r.width, height: r.height };
+        return {
+          x: r.x + window.scrollX,
+          y: r.y + window.scrollY,
+          width: r.width,
+          height: r.height,
+        };
       })()`,
       returnByValue: true,
     }) as { result: { value: unknown } };
@@ -154,33 +163,24 @@ async function doScreenshot(
       return error(id, `Element not found: ${params.selector}`);
     }
 
-    const clip = result.result.value as { x: number; y: number; width: number; height: number };
-    const capture = (await cdp(tabId, 'Page.captureScreenshot', {
-      format: 'png',
-      clip: { ...clip, scale: 1 },
-    })) as { data: string };
+    const rect = result.result.value as { x: number; y: number; width: number; height: number };
+    return await captureRect(id, tabId, rect, { kind: 'selector', selector: params.selector });
+  }
 
-    return success(id, { screenshot: capture.data, format: 'png', encoding: 'base64', clip });
+  if (params?.rect) {
+    return await captureRect(id, tabId, params.rect, { kind: 'rect' });
   }
 
   if (params?.fullPage) {
-    // Get full page metrics
     const metrics = (await cdp(tabId, 'Page.getLayoutMetrics')) as {
       contentSize: { width: number; height: number };
     };
-
-    const capture = (await cdp(tabId, 'Page.captureScreenshot', {
-      format: 'png',
-      clip: {
-        x: 0,
-        y: 0,
-        width: metrics.contentSize.width,
-        height: metrics.contentSize.height,
-        scale: 1,
-      },
-    })) as { data: string };
-
-    return success(id, { screenshot: capture.data, format: 'png', encoding: 'base64' });
+    return await captureRect(
+      id,
+      tabId,
+      { x: 0, y: 0, width: metrics.contentSize.width, height: metrics.contentSize.height },
+      { kind: 'fullPage' },
+    );
   }
 
   const capture = (await cdp(tabId, 'Page.captureScreenshot', {
@@ -189,6 +189,58 @@ async function doScreenshot(
 
   const pageState = await getPageState(tabId);
   return success(id, { screenshot: capture.data, format: 'png', encoding: 'base64' }, pageState);
+}
+
+/**
+ * Capture a page-coord rectangle at 1x CSS resolution by default, with a
+ * uniform downscale if the rect would exceed ~400M pixels (a safety cap
+ * shared with the Firefox implementation). Response mirrors Firefox so
+ * agents see the same shape across engines.
+ */
+async function captureRect(
+  id: string,
+  tabId: number,
+  rect: { x: number; y: number; width: number; height: number },
+  context: { kind: 'selector' | 'rect' | 'fullPage'; selector?: string },
+): Promise<ActionResult> {
+  if (rect.width <= 0 || rect.height <= 0) {
+    return error(id, 'Capture rect has non-positive dimensions');
+  }
+
+  const MAX_SIDE = 32000;
+  const MAX_AREA = 400_000_000;
+  let scale = 1;
+  if (rect.width * scale > MAX_SIDE) scale = Math.min(scale, MAX_SIDE / rect.width);
+  if (rect.height * scale > MAX_SIDE) scale = Math.min(scale, MAX_SIDE / rect.height);
+  if (rect.width * rect.height * scale * scale > MAX_AREA) {
+    scale = Math.min(scale, Math.sqrt(MAX_AREA / (rect.width * rect.height)));
+  }
+
+  const capture = (await cdp(tabId, 'Page.captureScreenshot', {
+    format: 'png',
+    clip: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale },
+    captureBeyondViewport: true,
+  })) as { data: string };
+
+  const pageState = await getPageState(tabId);
+  const outputW = Math.round(rect.width * scale);
+  const outputH = Math.round(rect.height * scale);
+  const data: Record<string, unknown> = {
+    screenshot: capture.data,
+    format: 'png',
+    encoding: 'base64',
+    pageRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    outputSize: { width: outputW, height: outputH },
+    scale,
+  };
+  if (context.kind === 'selector' && context.selector) {
+    data.selector = context.selector;
+  }
+  if (scale < 1) {
+    data.note =
+      'Image was downscaled to fit canvas limits. To read fine detail, call screenshot again with rect:{x,y,width,height} narrowed to a smaller sub-region.';
+  }
+  return success(id, data, pageState);
 }
 
 async function resolveElement(
@@ -402,15 +454,6 @@ async function doScroll(
   await sleep(200);
   const pageState = await getPageState(tabId);
   return success(id, { scrolled: params.direction, amount }, pageState);
-}
-
-function isSafeUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return ['http:', 'https:'].includes(parsed.protocol);
-  } catch {
-    return false;
-  }
 }
 
 async function doNavigate(
@@ -693,12 +736,26 @@ export function getToolSchema() {
   return [
     {
       name: 'screenshot',
-      description: 'Take a screenshot of the current page or a specific element. Returns base64-encoded PNG.',
+      description:
+        'Take a screenshot of the current page or a specific element. Returns base64-encoded PNG. ' +
+        'Default is viewport at 1x CSS resolution. Response includes pageRect (page coords depicted) ' +
+        'so you can follow up with rect:{x,y,width,height} to zoom into a sub-region at full detail.',
       parameters: {
         type: 'object',
         properties: {
           fullPage: { type: 'boolean', description: 'Capture full scrollable page' },
           selector: { type: 'string', description: 'CSS selector to screenshot specific element' },
+          rect: {
+            type: 'object',
+            description: 'Page-coordinate rect to capture (zoom into a region returned in a prior pageRect)',
+            properties: {
+              x: { type: 'number' },
+              y: { type: 'number' },
+              width: { type: 'number' },
+              height: { type: 'number' },
+            },
+            required: ['x', 'y', 'width', 'height'],
+          },
         },
       },
     },
