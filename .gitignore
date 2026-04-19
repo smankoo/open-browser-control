@@ -1,6 +1,8 @@
 node_modules/
 dist/
 extension/
+extension-firefox/
+releases/
 *.map
 .DS_Store
 .env
