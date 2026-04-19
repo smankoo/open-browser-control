@@ -1,6 +1,6 @@
 {
   "name": "open-browser-control",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Give AI agents control of your browser (Chrome or Firefox). Works with any MCP client.",
   "keywords": [
     "mcp",
