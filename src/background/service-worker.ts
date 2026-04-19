@@ -15,11 +15,15 @@ import type {
   ActionLogEntry,
   ControlMode,
 } from '../types/protocol';
+import { isSafeUrl } from '../utils/url-utils';
+import { getInstanceId } from '../utils/instance-id';
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
 const sessions = new Map<string, AgentSession>();
 const actionLog: ActionLogEntry[] = [];
+
+let conflictReason: string | null = null;
 
 function getState(): ExtensionState {
   return {
@@ -29,6 +33,7 @@ function getState(): ExtensionState {
       ownedTabIds: new Set<number>(),
     })),
     actionLog,
+    conflictReason,
   };
 }
 
@@ -42,26 +47,34 @@ function addLog(entry: Omit<ActionLogEntry, 'timestamp'>): void {
 
 // ─── WebSocket Bridge ────────────────────────────────────────────────────────
 
-const bridge = new WebSocketBridge({
-  onMessage: handleBridgeMessage,
-  onStatusChange: (status) => {
-    const wasConnected = getState().connected;
-    const isConnected = status === 'connected';
+const bridge = new WebSocketBridge(
+  {
+    onMessage: handleBridgeMessage,
+    onStatusChange: (status, reason) => {
+      const wasConnected = getState().connected;
+      const isConnected = status === 'connected';
 
-    if (isConnected && !wasConnected) {
-      addLog({ source: 'system', action: 'Connected to bridge', status: 'success' });
-    } else if (!isConnected && wasConnected) {
-      // Bridge went down — clear all sessions
-      for (const [sessionId, session] of sessions) {
-        cleanupSession(sessionId, session);
+      conflictReason = status === 'conflict' ? (reason ?? 'Port already claimed by another extension') : null;
+
+      if (isConnected && !wasConnected) {
+        addLog({ source: 'system', action: 'Connected to bridge', status: 'success' });
+      } else if (!isConnected && wasConnected) {
+        // Bridge went down — clear all sessions
+        for (const [sessionId, session] of sessions) {
+          cleanupSession(sessionId, session);
+        }
+        sessions.clear();
+        chrome.storage.local.remove('obc_sessions').catch(() => {});
+        addLog({ source: 'system', action: 'Disconnected from bridge', status: 'pending' });
       }
-      sessions.clear();
-      chrome.storage.local.remove('obc_sessions').catch(() => {});
-      addLog({ source: 'system', action: 'Disconnected from bridge', status: 'pending' });
-    }
-    broadcastState();
+      if (status === 'conflict') {
+        addLog({ source: 'system', action: `Bridge conflict: ${reason ?? 'port in use'}`, status: 'error' });
+      }
+      broadcastState();
+    },
   },
-});
+  { browser: 'chrome', instanceId: 'pending' },
+);
 
 // ─── Session Management ──────────────────────────────────────────────────────
 
@@ -338,17 +351,9 @@ async function handleBridgeMessage(message: AgentMessage): Promise<void> {
   if (message.action === 'new_tab_group') {
     const groupName = message.params?.name || 'Task';
     const requestedUrl = message.params?.url ?? 'about:blank';
-    if (requestedUrl !== 'about:blank') {
-      try {
-        const parsed = new URL(requestedUrl);
-        if (!['http:', 'https:'].includes(parsed.protocol)) {
-          bridge.send({ type: 'result', id: message.id, session: sessionId, success: false, error: 'Blocked: only http and https URLs are allowed' });
-          return;
-        }
-      } catch {
-        bridge.send({ type: 'result', id: message.id, session: sessionId, success: false, error: 'Blocked: invalid URL' });
-        return;
-      }
+    if (requestedUrl !== 'about:blank' && !isSafeUrl(requestedUrl)) {
+      bridge.send({ type: 'result', id: message.id, session: sessionId, success: false, error: 'Blocked: only http and https URLs are allowed' });
+      return;
     }
 
     const tab = await chrome.tabs.create({ url: requestedUrl, active: false });
@@ -385,17 +390,9 @@ async function handleBridgeMessage(message: AgentMessage): Promise<void> {
   // Handle new_tab — add to session's tab group
   if (message.action === 'new_tab') {
     const requestedUrl = message.params?.url ?? 'about:blank';
-    if (requestedUrl !== 'about:blank') {
-      try {
-        const parsed = new URL(requestedUrl);
-        if (!['http:', 'https:'].includes(parsed.protocol)) {
-          bridge.send({ type: 'result', id: message.id, session: sessionId, success: false, error: 'Blocked: only http and https URLs are allowed' });
-          return;
-        }
-      } catch {
-        bridge.send({ type: 'result', id: message.id, session: sessionId, success: false, error: 'Blocked: invalid URL' });
-        return;
-      }
+    if (requestedUrl !== 'about:blank' && !isSafeUrl(requestedUrl)) {
+      bridge.send({ type: 'result', id: message.id, session: sessionId, success: false, error: 'Blocked: only http and https URLs are allowed' });
+      return;
     }
     const tab = await chrome.tabs.create({ url: requestedUrl });
     if (tab.id) {
@@ -658,10 +655,14 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 
 // ─── Startup ─────────────────────────────────────────────────────────────────
 
-chrome.storage.local.get(['bridgePort'], (result) => {
-  if (result.bridgePort) {
-    bridge.setPort(result.bridgePort as number);
+Promise.all([
+  chrome.storage.local.get(['bridgePort']),
+  getInstanceId(),
+]).then(([storage, instanceId]) => {
+  if (storage.bridgePort) {
+    bridge.setPort(storage.bridgePort as number);
   }
+  bridge.setIdentity({ browser: 'chrome', instanceId });
   bridge.connect();
 });
 

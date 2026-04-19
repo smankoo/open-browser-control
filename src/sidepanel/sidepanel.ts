@@ -100,6 +100,12 @@ function render(): void {
       ? `${count} agent session${count > 1 ? 's' : ''} active`
       : 'Bridge connected, waiting for agents';
     statusHint.textContent = '';
+  } else if (currentState.conflictReason) {
+    statusBadge.textContent = 'conflict';
+    statusBadge.className = 'badge disconnected';
+    statusDot.className = 'status-dot disconnected';
+    statusMessage.textContent = currentState.conflictReason;
+    statusHint.textContent = 'Close the other browser, or disable its Open Browser Control extension, to use this one.';
   } else {
     statusBadge.textContent = 'offline';
     statusBadge.className = 'badge disconnected';
