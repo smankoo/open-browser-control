@@ -47,7 +47,7 @@ let actionId = 0;
 const pendingActions = new Map();
 
 function connectToBridge() {
-  ws = new WebSocket(`ws://localhost:${BRIDGE_PORT}`);
+  ws = new WebSocket(`ws://127.0.0.1:${BRIDGE_PORT}`);
 
   ws.on('open', () => {
     wsConnected = true;

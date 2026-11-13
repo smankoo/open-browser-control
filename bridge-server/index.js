@@ -140,6 +140,7 @@ Usage:
   npx open-browser-control --extension           Print Chrome extension path and exit
   npx open-browser-control --extension firefox   Print Firefox extension path and exit
   npx open-browser-control --port 9000           Use a custom port
+  npx open-browser-control --bridge --host 0.0.0.0  Listen beyond this machine (default 127.0.0.1)
 
 Both Chrome and Firefox extensions speak the same WebSocket protocol to
 the same bridge on port 9334 — install whichever browser's extension you

@@ -31,7 +31,7 @@ let messageId = 0;
 const pendingRequests = new Map();
 
 function connect() {
-  ws = new WebSocket(`ws://localhost:${PORT}`);
+  ws = new WebSocket(`ws://127.0.0.1:${PORT}`);
 
   ws.on('open', () => {
     connected = true;
