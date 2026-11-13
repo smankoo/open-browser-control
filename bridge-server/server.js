@@ -27,6 +27,8 @@ function getArg(name, defaultValue) {
 }
 
 const PORT = parseInt(getArg('port', '9334'), 10);
+// Loopback only by default: the bridge lets whoever connects drive the browser.
+const HOST = getArg('host', '127.0.0.1');
 
 // ─── Message Validation ─────────────────────────────────────────────────────
 
@@ -104,9 +106,27 @@ setInterval(reapExpiredPending, 1000);
 
 // ─── WebSocket Server ────────────────────────────────────────────────────────
 
-const wss = new WebSocketServer({ port: PORT });
+// Who may connect: the browser extension, whose WebSocket carries its
+// moz-extension:// or chrome-extension:// origin, and agents running on this
+// machine (Node clients such as the MCP server send no Origin header). A web
+// page always sends its own origin, so pages can't open a session and drive
+// the browser through the bridge.
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  return /^(moz-extension|chrome-extension):\/\//.test(origin);
+}
 
-log(`Bridge server listening on ws://localhost:${PORT}`);
+const wss = new WebSocketServer({
+  host: HOST,
+  port: PORT,
+  verifyClient: ({ origin }) => {
+    if (isAllowedOrigin(origin)) return true;
+    log(`Refused a connection from origin ${origin}`);
+    return false;
+  },
+});
+
+log(`Bridge server listening on ws://${HOST}:${PORT}`);
 
 wss.on('connection', (ws) => {
   // We don't know yet if this is the extension or an agent.

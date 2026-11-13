@@ -21,7 +21,7 @@
 const WebSocket = require('ws');
 
 const PORT = process.argv[2] || 9334;
-const ws = new WebSocket(`ws://localhost:${PORT}`);
+const ws = new WebSocket(`ws://127.0.0.1:${PORT}`);
 
 let messageId = 0;
 const pendingRequests = new Map();
